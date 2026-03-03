@@ -125,8 +125,50 @@ Precedence (highest to lowest):
 - Browse and search entries across all data sources (global + per-project)
 - Timeline/calendar view of entries
 - Topic clustering and visualization
-- Summary management
+- `summary.md` management
 - Session history
+- Explicit record/search UI (usable without any MCP client)
+
+### 2026-03-03: UX Direction for Open Source Adoption
+
+**Decision:** Keep MCP integration as the power-user path, and complement it with explicit non-MCP UX.
+
+**Rationale:**
+- MCP-only onboarding can feel heavy for first-time/open-source users
+- A direct UI path reduces setup friction and improves first-run success
+- This keeps protocol flexibility (MCP) while improving accessibility for non-MCP users
+
+**Direction:**
+- Track A: MCP integration for coding-agent workflows
+- Track B: explicit dashboard UX for browsing, recording, and searching entries
+
+### 2026-03-03: Automatic Recall at New Session Start (Deferred)
+
+**Status:** Deferred for now ("use more and decide later").
+
+**Problem:** At new session start, Claude does not always automatically reference existing B-TWIN records.
+
+**Options under consideration:**
+- Use MCP `prompts` capability to guide initial recall behavior
+- Add explicit B-TWIN search instruction in system prompt
+
+**Decision for now:** Do not lock implementation yet; gather more usage feedback first.
+
+### 2026-03-03: Frontmatter Metadata Expansion (Planned)
+
+**Current state:** Entries currently store `topic`, `created_at`, `date`, `slug`.
+
+**Decision:** Expand metadata schema to better support dashboard visualization and navigation.
+
+**Candidate fields:**
+- `tags`
+- `category`
+- `emotion` / `importance` labels
+- related-entry links
+
+**Notes:**
+- Keep backward compatibility with existing entries
+- Avoid overfitting early; start with optional fields
 
 ## Tech Stack
 
