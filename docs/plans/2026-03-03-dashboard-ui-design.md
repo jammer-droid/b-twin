@@ -306,7 +306,28 @@ Knowledge Graph 페이지의 핵심 인터랙션.
 - **File**: `docs/pencil/dashboard.pen`
 - **Pages**: Home, Entries, Sources, Graph (4 screens)
 
-## 12. Next Steps
+## 12. References
+
+### MVP 적용
+
+| 레퍼런스 | 링크 | 적용 포인트 |
+|----------|------|-------------|
+| D3 Force-Directed Graph | https://observablehq.com/@d3/force-directed-graph | 그래프 엔진 기본형. force 레이아웃의 표준 구현 |
+| Obsidian Graph View | https://help.obsidian.md/plugins/graph | local/global view 분리, 필터 패널 구조, 1-2 hop 하이라이트 |
+| Cosmograph | https://cosmograph.app/ | 다크 배경 노드 glow 강도 기준, 줌 레벨별 라벨 노출 단계 |
+| Framer Motion | https://www.framer.com/motion/ | Tier2 모션(페이지 전환, 사이드 패널 슬라이드, 카드 등장) |
+
+### Future 참고
+
+| 레퍼런스 | 링크 | 참고 포인트 |
+|----------|------|-------------|
+| Graphistry Gallery | https://www.graphistry.com/gallery | 대규모 그래프 가독성: edge opacity, 군집 강조, 필터 UX |
+| Logseq Graph | https://docs.logseq.com/ | 양방향 링크 탐색 인터랙션 (v2 벡터 유사도 도입 시 참고) |
+| Stellarium Web | https://stellarium-web.org/ | 별지도 인터랙션 무드. "배경은 조용하게, 데이터 전면에" 원칙 |
+| NASA Image Library | https://images.nasa.gov/ | 팔레트 참고(네이비+앰버+바이올렛 그라디언트 톤) |
+| Vanta.js | https://www.vantajs.com/ | Tier3 배경 효과 아이디어 (별 파티클 등, 성능 주의) |
+
+## 13. Next Steps
 
 1. ~~Create UI mockups in Pencil~~ (Done)
 2. ~~Validate mockups with user~~ (Done — iterating)
