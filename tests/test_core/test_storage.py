@@ -103,3 +103,25 @@ def test_read_entry_without_frontmatter(tmp_path):
     assert entry is not None
     assert entry.content == "# Old Entry\n\nNo frontmatter."
     assert entry.metadata == {}
+
+
+def test_read_entry_preserves_structured_frontmatter(tmp_path):
+    storage = Storage(data_dir=tmp_path)
+    entry = Entry(
+        date="2026-03-03",
+        slug="graph-note",
+        content="# Graph Note\n\nBody",
+        metadata={
+            "topic": "memory",
+            "tags": ["ux", "dashboard"],
+            "related": ["2026-03-01-note-1", "2026-03-02-note-9"],
+            "importance": "high",
+        },
+    )
+    storage.save_entry(entry)
+
+    loaded = storage.read_entry("2026-03-03", "graph-note")
+    assert loaded is not None
+    assert loaded.metadata["tags"] == ["ux", "dashboard"]
+    assert loaded.metadata["related"] == ["2026-03-01-note-1", "2026-03-02-note-9"]
+    assert loaded.metadata["importance"] == "high"

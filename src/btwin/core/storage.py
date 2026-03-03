@@ -35,8 +35,12 @@ class Storage:
                 fm_text = parts[1]
                 content = parts[2].lstrip("\n")
                 metadata = yaml.safe_load(fm_text) or {}
-                # Ensure date/slug are strings
-                metadata = {k: str(v) for k, v in metadata.items()}
+                # Keep structured metadata types (lists/labels/links),
+                # but normalize canonical scalar fields to strings.
+                if "date" in metadata:
+                    metadata["date"] = str(metadata["date"])
+                if "slug" in metadata:
+                    metadata["slug"] = str(metadata["slug"])
                 return Entry(date=date, slug=slug, content=content, metadata=metadata)
         # No frontmatter (backwards compatible)
         return Entry(date=date, slug=slug, content=raw)

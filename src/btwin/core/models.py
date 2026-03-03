@@ -28,4 +28,4 @@ class Entry(BaseModel):
     date: str  # YYYY-MM-DD
     slug: str
     content: str
-    metadata: dict[str, str] = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
