@@ -31,6 +31,7 @@ Build a **local-first dashboard** that lets users explicitly browse, record, sea
 4. Session history view
 5. `summary.md` view/edit UI
 6. Data source management (global/project `.btwin` sources)
+7. Knowledge graph view (explicit-link constellation map)
 
 ## 3.2 Data Source Discovery & Management (Decided)
 - Auto-register global default: `~/.btwin`
@@ -51,7 +52,7 @@ Build a **local-first dashboard** that lets users explicitly browse, record, sea
 - **Sessions**: session history and summaries
 - **Summary**: `summary.md` management
 - **Sources**: data source registration/scan/enable toggles
-- **Graph** (v1.1+): explicit-link graph and related exploration
+- **Graph**: explicit-link constellation map and related exploration
 
 ## 5. Primary UX Flows
 
@@ -99,18 +100,27 @@ Principles:
 - New fields start optional
 - No automatic write of similarity edges without user confirmation
 
-## 7. Graph Strategy (v1.1+)
+## 7. Graph Strategy (v1 — promoted to MVP)
 
 - Node identity: `id`
 - Primary edge: `related`
 - Grouping/filter metadata: `topic`, `tags`, `project`, `source`, `session_id`, `created_at`
-- Similarity edges are optional overlays, user-adjustable by threshold, and not persisted by default
+- **v1**: Candidate edges derived from frontmatter metadata overlap (`tags`, `topic`, `project`). Simple, no indexing required.
+- **Future**: Semantic similarity via vector store (ChromaDB). User-adjustable threshold, not persisted by default.
+
+### v1 Graph Scope
+- Constellation-style visualization of entries and their explicit `related` links
+- Nodes styled as planets (SVG radialGradient), edges as orbital connections
+- Filter by topic, tags, source
+- Click node to open entry detail
+- **Candidate connections (v1)**: metadata matching (`tags`, `topic`, `project` overlap) shown as gray dashed edges
+- **Candidate connections (future)**: vector similarity overlay (requires ChromaDB indexing), threshold-adjustable
 
 ## 8. Non-Goals (for v1)
 
 - Cloud sync / multi-user collaboration
 - Background auto-crawl of entire filesystem
-- Full Obsidian-parity graph interactions
+- Full Obsidian-parity graph interactions (v1 provides basic constellation view, not full graph IDE)
 - Automatic session-start recall enforcement
 
 ## 9. Open Questions / Deferred
