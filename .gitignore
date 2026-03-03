@@ -5,3 +5,4 @@ dist/
 *.egg-info/
 .chroma/
 .pytest_cache/
+docs/plans/
