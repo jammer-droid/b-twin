@@ -179,3 +179,39 @@ Precedence (highest to lowest):
 - **LLM (optional):** LiteLLM (CLI standalone mode only)
 - **CLI:** Typer + Rich
 - **Config:** Pydantic + PyYAML
+
+### 2026-03-03: Graph UX Strategy (Obsidian-like, explicit-first)
+
+**Decision:** Use explicit links as the primary graph structure, with similarity as an assistive suggestion layer.
+
+**Rationale:**
+- Explicit links are user-auditable and stable for long-term knowledge graph quality
+- Similarity-only edges can be noisy and reduce trust in graph navigation
+- Hybrid approach preserves automation benefits without sacrificing control
+
+**Graph model (v1):**
+- Node key: `id` (entry identifier)
+- Primary edge: `related` (explicit links)
+- Grouping/filter metadata: `topic`, `tags`, `project`, `source`, `session_id`, `created_at`
+
+**Frontmatter expansion draft (v1):**
+- `id`
+- `title`
+- `created_at`
+- `source` (`global` | `project`)
+- `project`
+- `topic`
+- `tags`
+- `importance`
+- `emotion`
+- `related` (list of entry ids)
+- `session_id`
+
+**Save-time similarity flow:**
+1. User writes note
+2. System computes top-k similar entries
+3. UI presents candidates for confirmation
+4. Only user-approved links are written into `related`
+
+**Non-goal (v1):**
+- Do not auto-write similarity edges without user confirmation.
