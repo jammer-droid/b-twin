@@ -617,9 +617,23 @@ def create_collab_app(
         }
 
     @app.post("/api/admin/agents/reload")
-    def reload_agents(payload: ReloadRequest, x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
-        if not (payload.actor_agent == "main" or (admin_token and x_admin_token == admin_token)):
-            return _error(403, "FORBIDDEN", "admin reload is restricted")
+    def reload_agents(
+        payload: ReloadRequest,
+        x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+        x_actor_agent: str | None = Header(default=None, alias="X-Actor-Agent"),
+    ):
+        actor = x_actor_agent or payload.actor_agent
+
+        actor_decision = validate_actor(actor, registry.agents)
+        if not actor_decision.ok:
+            return _error(403, "FORBIDDEN", actor_decision.message or "forbidden", actor_decision.details)
+        if actor != payload.actor_agent:
+            return _error(403, "FORBIDDEN", "actor must match actorAgent", {"actorAgent": actor})
+
+        if not admin_token:
+            return _error(403, "FORBIDDEN", "admin reload is disabled (no admin token configured)")
+        if x_admin_token != admin_token:
+            return _error(403, "FORBIDDEN", "admin token is required")
 
         summary = registry.reload(payload.override_path)
         return {"ok": True, **summary}

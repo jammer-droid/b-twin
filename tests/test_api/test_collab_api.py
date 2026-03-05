@@ -235,19 +235,28 @@ def test_validation_error_uses_standard_error_envelope(tmp_path: Path):
     assert "traceId" in body
 
 
-def test_admin_reload_requires_main_or_admin_token(tmp_path: Path):
+def test_admin_reload_requires_admin_token_and_actor_binding(tmp_path: Path):
     client = _client(tmp_path)
 
-    denied = client.post("/api/admin/agents/reload", json={"actorAgent": "codex-code"})
-    assert denied.status_code == 403
-    assert denied.json()["errorCode"] == "FORBIDDEN"
-
-    allowed_main = client.post("/api/admin/agents/reload", json={"actorAgent": "main"})
-    assert allowed_main.status_code == 200
-
-    allowed_token = client.post(
+    denied_no_token = client.post(
         "/api/admin/agents/reload",
-        json={"actorAgent": "codex-code"},
-        headers={"X-Admin-Token": "secret-token"},
+        json={"actorAgent": "main"},
+        headers={"X-Actor-Agent": "main"},
     )
-    assert allowed_token.status_code == 200
+    assert denied_no_token.status_code == 403
+    assert denied_no_token.json()["errorCode"] == "FORBIDDEN"
+
+    denied_actor_mismatch = client.post(
+        "/api/admin/agents/reload",
+        json={"actorAgent": "main"},
+        headers={"X-Actor-Agent": "codex-code", "X-Admin-Token": "secret-token"},
+    )
+    assert denied_actor_mismatch.status_code == 403
+    assert denied_actor_mismatch.json()["errorCode"] == "FORBIDDEN"
+
+    allowed = client.post(
+        "/api/admin/agents/reload",
+        json={"actorAgent": "main"},
+        headers={"X-Actor-Agent": "main", "X-Admin-Token": "secret-token"},
+    )
+    assert allowed.status_code == 200
