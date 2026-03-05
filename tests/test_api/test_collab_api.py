@@ -260,3 +260,57 @@ def test_admin_reload_requires_admin_token_and_actor_binding(tmp_path: Path):
         headers={"X-Actor-Agent": "main", "X-Admin-Token": "secret-token"},
     )
     assert allowed.status_code == 200
+
+
+def test_admin_reload_rejects_path_traversal(tmp_path: Path):
+    """overridePath must resolve within the user's home directory."""
+    client = _client(tmp_path)
+    auth_headers = {"X-Actor-Agent": "main", "X-Admin-Token": "secret-token"}
+
+    # Absolute path outside home directory
+    res = client.post(
+        "/api/admin/agents/reload",
+        json={"actorAgent": "main", "overridePath": "/etc/passwd"},
+        headers=auth_headers,
+    )
+    assert res.status_code == 400
+    assert res.json()["errorCode"] == "INVALID_PATH"
+
+    # Path traversal via ..
+    res = client.post(
+        "/api/admin/agents/reload",
+        json={"actorAgent": "main", "overridePath": "~/../../../etc/shadow"},
+        headers=auth_headers,
+    )
+    assert res.status_code == 400
+    assert res.json()["errorCode"] == "INVALID_PATH"
+
+    # Valid path within home directory should be accepted
+    res = client.post(
+        "/api/admin/agents/reload",
+        json={"actorAgent": "main", "overridePath": "~/.btwin/agents.json"},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+
+
+def test_admin_endpoints_reject_bad_tokens(tmp_path: Path):
+    """Admin-protected endpoints must reject None, empty, and wrong tokens."""
+    client = _client(tmp_path)
+
+    endpoints = [
+        ("/api/admin/agents/reload", {"actorAgent": "main"}),
+        ("/api/promotions/run-batch", {"actorAgent": "main"}),
+    ]
+    bad_token_cases = [
+        ({}, "no token header"),
+        ({"X-Admin-Token": ""}, "empty token"),
+        ({"X-Admin-Token": "wrong-token"}, "wrong token"),
+    ]
+
+    for path, body in endpoints:
+        for extra_headers, label in bad_token_cases:
+            headers = {"X-Actor-Agent": "main", **extra_headers}
+            res = client.post(path, json=body, headers=headers)
+            assert res.status_code == 403, f"{path} should reject {label}"
+            assert res.json()["errorCode"] == "FORBIDDEN"

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
+from collections import OrderedDict
 from pathlib import Path
 from uuid import uuid4
 
@@ -111,7 +113,8 @@ def create_collab_app(
         extra_agents=extra_agents,
         initial_agents=initial_agents,
     )
-    idempotency_cache: dict[str, dict[str, str]] = {}
+    _IDEMPOTENCY_CACHE_MAX = 1000
+    idempotency_cache: OrderedDict[str, dict[str, str]] = OrderedDict()
 
     def _trace_id() -> str:
         return f"trc_{uuid4().hex[:12]}"
@@ -136,7 +139,7 @@ def create_collab_app(
     def _require_admin_token_if_configured(x_admin_token: str | None) -> JSONResponse | None:
         if not admin_token:
             return None
-        if x_admin_token == admin_token:
+        if x_admin_token and hmac.compare_digest(x_admin_token, admin_token):
             return None
         return _error(403, "FORBIDDEN", "admin token is required")
 
@@ -761,6 +764,8 @@ def create_collab_app(
                 "payload_hash": request_hash,
                 "record_id": record.record_id,
             }
+            if len(idempotency_cache) >= _IDEMPOTENCY_CACHE_MAX:
+                idempotency_cache.popitem(last=False)
 
         return JSONResponse(
             status_code=201,
@@ -1067,7 +1072,7 @@ def create_collab_app(
 
         if not admin_token:
             return _error(403, "FORBIDDEN", "batch run is disabled (no admin token configured)")
-        if x_admin_token != admin_token:
+        if not x_admin_token or not hmac.compare_digest(x_admin_token, admin_token):
             return _error(403, "FORBIDDEN", "admin token is required")
 
         worker = PromotionWorker(storage=storage, promotion_store=promotion_store)
@@ -1165,8 +1170,18 @@ def create_collab_app(
 
         if not admin_token:
             return _error(403, "FORBIDDEN", "admin reload is disabled (no admin token configured)")
-        if x_admin_token != admin_token:
+        if not x_admin_token or not hmac.compare_digest(x_admin_token, admin_token):
             return _error(403, "FORBIDDEN", "admin token is required")
+
+        if payload.override_path:
+            resolved = Path(payload.override_path).expanduser().resolve()
+            home_dir = Path.home().resolve()
+            if not resolved.is_relative_to(home_dir):
+                return _error(
+                    400,
+                    "INVALID_PATH",
+                    "overridePath must resolve within the user home directory",
+                )
 
         summary = registry.reload(payload.override_path)
         return {"ok": True, **summary}
