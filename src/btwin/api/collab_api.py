@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from btwin.config import BTwinConfig, load_config
@@ -107,6 +107,209 @@ def create_collab_app(
             "request validation failed",
             {"issues": exc.errors()},
         )
+
+    def _ui_html() -> str:
+        return """
+<!doctype html>
+<html lang=\"ko\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>B-TWIN Collab Dashboard</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; color: #0f172a; }
+    h1 { margin: 0 0 16px; }
+    .layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+    .card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 8px; text-align: left; }
+    tr:hover { background: #f8fafc; cursor: pointer; }
+    .muted { color: #64748b; font-size: 12px; }
+    .status { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid #cbd5e1; }
+    .status.draft { background: #fff7ed; }
+    .status.handed_off { background: #eff6ff; }
+    .status.completed { background: #f0fdf4; }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+    .error { margin-top: 12px; padding: 10px; border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; display: none; }
+    input, select, button { font-size: 14px; padding: 6px 8px; }
+    button { border: 1px solid #cbd5e1; background: #fff; border-radius: 8px; cursor: pointer; }
+    .actions { display: grid; gap: 8px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Collab Records</h1>
+  <div class=\"layout\">
+    <section class=\"card\">
+      <div class=\"toolbar\">
+        <label for=\"statusFilter\">상태 필터</label>
+        <select id=\"statusFilter\">
+          <option value=\"in-progress\" selected>진행중(draft + handed_off)</option>
+          <option value=\"all\">전체</option>
+          <option value=\"draft\">draft</option>
+          <option value=\"handed_off\">handed_off</option>
+          <option value=\"completed\">completed</option>
+        </select>
+        <button id=\"refreshBtn\">새로고침</button>
+      </div>
+      <table>
+        <thead><tr><th>taskId</th><th>status</th><th>authorAgent</th><th>createdAt</th></tr></thead>
+        <tbody id=\"recordsBody\"></tbody>
+      </table>
+    </section>
+    <aside class=\"card\">
+      <h3>상세</h3>
+      <div id=\"detail\" class=\"muted\">레코드를 선택하세요.</div>
+      <div class=\"actions\">
+        <div>
+          <div class=\"muted\">handoff</div>
+          <input id=\"handoffFrom\" placeholder=\"fromAgent\" />
+          <input id=\"handoffTo\" placeholder=\"toAgent\" />
+          <input id=\"handoffVersion\" placeholder=\"expectedVersion\" type=\"number\" min=\"1\" />
+          <button id=\"handoffBtn\">handoff 실행</button>
+        </div>
+        <div>
+          <div class=\"muted\">complete</div>
+          <input id=\"completeActor\" placeholder=\"actorAgent\" />
+          <input id=\"completeVersion\" placeholder=\"expectedVersion\" type=\"number\" min=\"1\" />
+          <button id=\"completeBtn\">complete 실행</button>
+        </div>
+      </div>
+      <div id=\"errorPanel\" class=\"error\"></div>
+    </aside>
+  </div>
+
+  <script>
+    const state = { items: [], selected: null };
+
+    function escapeHtml(v) {
+      return String(v ?? '').replace(/[&<>\"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    async function loadRecords() {
+      const res = await fetch('/api/collab/records');
+      const data = await res.json();
+      state.items = data.items || [];
+      renderTable();
+    }
+
+    function matchesFilter(item, filter) {
+      if (filter === 'all') return true;
+      if (filter === 'in-progress') return item.status === 'draft' || item.status === 'handed_off';
+      return item.status === filter;
+    }
+
+    function renderTable() {
+      const filter = document.getElementById('statusFilter').value;
+      const body = document.getElementById('recordsBody');
+      const rows = state.items
+        .filter(item => matchesFilter(item, filter))
+        .map(item => `
+          <tr data-id=\"${escapeHtml(item.recordId)}\">
+            <td>${escapeHtml(item.taskId)}</td>
+            <td><span class=\"status ${escapeHtml(item.status)}\">${escapeHtml(item.status)}</span></td>
+            <td>${escapeHtml(item.authorAgent)}</td>
+            <td>${escapeHtml(item.createdAt)}</td>
+          </tr>
+        `)
+        .join('');
+      body.innerHTML = rows || '<tr><td colspan=\"4\" class=\"muted\">데이터 없음</td></tr>';
+      for (const tr of body.querySelectorAll('tr[data-id]')) {
+        tr.addEventListener('click', () => selectRecord(tr.dataset.id));
+      }
+    }
+
+    function setError(message, traceId) {
+      const panel = document.getElementById('errorPanel');
+      if (!message) {
+        panel.style.display = 'none';
+        panel.textContent = '';
+        return;
+      }
+      panel.style.display = 'block';
+      panel.innerHTML = `<strong>${escapeHtml(message)}</strong><div class=\"muted\">traceId: ${escapeHtml(traceId || '-')}</div>`;
+    }
+
+    async function selectRecord(recordId) {
+      setError('');
+      const res = await fetch(`/api/collab/records/${recordId}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message, data.traceId);
+        return;
+      }
+      state.selected = data;
+      const fm = data.frontmatter;
+      document.getElementById('detail').innerHTML = `
+        <div><strong>${escapeHtml(fm.taskId)}</strong></div>
+        <div class=\"muted\">recordId: ${escapeHtml(fm.recordId)}</div>
+        <pre>${escapeHtml(data.content)}</pre>
+      `;
+      document.getElementById('handoffFrom').value = fm.authorAgent || '';
+      document.getElementById('completeActor').value = fm.authorAgent || '';
+      document.getElementById('handoffVersion').value = String(fm.version || 1);
+      document.getElementById('completeVersion').value = String(fm.version || 1);
+    }
+
+    async function runHandoff() {
+      if (!state.selected) return;
+      const fm = state.selected.frontmatter;
+      const payload = {
+        recordId: fm.recordId,
+        expectedVersion: Number(document.getElementById('handoffVersion').value || fm.version),
+        fromAgent: document.getElementById('handoffFrom').value,
+        toAgent: document.getElementById('handoffTo').value,
+      };
+      const actor = payload.fromAgent;
+      const res = await fetch('/api/collab/handoff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Actor-Agent': actor },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message, data.traceId);
+        return;
+      }
+      await loadRecords();
+      await selectRecord(payload.recordId);
+    }
+
+    async function runComplete() {
+      if (!state.selected) return;
+      const fm = state.selected.frontmatter;
+      const payload = {
+        recordId: fm.recordId,
+        expectedVersion: Number(document.getElementById('completeVersion').value || fm.version),
+        actorAgent: document.getElementById('completeActor').value,
+      };
+      const res = await fetch('/api/collab/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Actor-Agent': payload.actorAgent },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message, data.traceId);
+        return;
+      }
+      await loadRecords();
+      await selectRecord(payload.recordId);
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadRecords);
+    document.getElementById('statusFilter').addEventListener('change', renderTable);
+    document.getElementById('handoffBtn').addEventListener('click', runHandoff);
+    document.getElementById('completeBtn').addEventListener('click', runComplete);
+
+    loadRecords();
+  </script>
+</body>
+</html>
+        """
+
+    @app.get("/ui/collab", response_class=HTMLResponse)
+    def collab_ui() -> str:
+        return _ui_html()
 
     @app.post("/api/collab/records")
     def create_record(payload: CreateCollabRecordRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
