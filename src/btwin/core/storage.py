@@ -4,6 +4,7 @@ from pathlib import Path
 
 import yaml
 
+from btwin.core.collab_models import CollabRecord
 from btwin.core.models import Entry
 
 
@@ -11,6 +12,7 @@ class Storage:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
         self.entries_dir = data_dir / "entries"
+        self.collab_entries_dir = self.entries_dir / "collab"
 
     def save_entry(self, entry: Entry) -> Path:
         """Save an entry. If same date/slug exists, merge content and tags."""
@@ -79,3 +81,67 @@ class Storage:
             return None
         raw = file_path.read_text()
         return self._parse_file(raw, date, slug)
+
+    def save_collab_record(self, record: CollabRecord) -> Path:
+        """Save a collab record under entries/collab/YYYY-MM-DD/."""
+        day = record.created_at.date().isoformat()
+        date_dir = self.collab_entries_dir / day
+        date_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_task = record.task_id.replace("/", "-")
+        file_path = date_dir / f"{safe_task}-{record.status}-{record.record_id}.md"
+
+        frontmatter = yaml.dump(
+            record.model_dump(by_alias=True, mode="json"),
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        ).strip()
+
+        body_lines = [record.summary, "", "## Evidence"]
+        body_lines.extend([f"- {item}" for item in record.evidence])
+        body_lines.append("")
+        body_lines.append("## Next Action")
+        body_lines.extend([f"- {item}" for item in record.next_action])
+        body = "\n".join(body_lines)
+
+        file_path.write_text(f"---\n{frontmatter}\n---\n\n{body}\n")
+        return file_path
+
+    def read_collab_record(self, record_id: str) -> CollabRecord | None:
+        """Read a collab record by record id."""
+        if not self.collab_entries_dir.exists():
+            return None
+
+        for file_path in sorted(self.collab_entries_dir.glob("*/*.md")):
+            raw = file_path.read_text()
+            parsed = self._parse_collab_frontmatter(raw)
+            if parsed and parsed.record_id == record_id:
+                return parsed
+        return None
+
+    def list_collab_records(self) -> list[CollabRecord]:
+        """List all collab records."""
+        records: list[CollabRecord] = []
+        if not self.collab_entries_dir.exists():
+            return records
+
+        for file_path in sorted(self.collab_entries_dir.glob("*/*.md")):
+            parsed = self._parse_collab_frontmatter(file_path.read_text())
+            if parsed:
+                records.append(parsed)
+        return records
+
+    @staticmethod
+    def _parse_collab_frontmatter(raw: str) -> CollabRecord | None:
+        if not raw.startswith("---\n"):
+            return None
+        parts = raw.split("---\n", 2)
+        if len(parts) < 3:
+            return None
+
+        metadata = yaml.safe_load(parts[1]) or {}
+        try:
+            return CollabRecord.model_validate(metadata)
+        except Exception:
+            return None
