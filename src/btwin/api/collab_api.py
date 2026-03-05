@@ -465,6 +465,77 @@ def create_collab_app(
     def promotions_ui() -> str:
         return _promotions_ui_html()
 
+    def _promoted_ui_html() -> str:
+        return """
+<!doctype html>
+<html lang=\"ko\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>B-TWIN Promoted History</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; color: #0f172a; }
+    h1 { margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 8px; text-align: left; }
+    .muted { color: #64748b; }
+    .error { margin-top: 12px; padding: 10px; border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; display: none; }
+  </style>
+</head>
+<body>
+  <h1>Promoted History</h1>
+  <table>
+    <thead><tr><th>itemId</th><th>sourceRecordId</th><th>scope</th><th>path</th></tr></thead>
+    <tbody id=\"historyBody\"></tbody>
+  </table>
+  <div id=\"errorPanel\" class=\"error\"></div>
+
+  <script>
+    function esc(v) {
+      return String(v ?? '').replace(/[&<>\"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    function showError(message, traceId) {
+      const el = document.getElementById('errorPanel');
+      if (!message) {
+        el.style.display = 'none';
+        el.textContent = '';
+        return;
+      }
+      el.style.display = 'block';
+      el.innerHTML = `<strong>${esc(message)}</strong><div class=\"muted\">traceId: ${esc(traceId || '-')}</div>`;
+    }
+
+    async function loadHistory() {
+      const res = await fetch('/api/promotions/history');
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.message, data.traceId);
+        return;
+      }
+
+      const rows = (data.items || []).map(item => `
+        <tr>
+          <td>${esc(item.itemId)}</td>
+          <td>${esc(item.sourceRecordId)}</td>
+          <td>${esc(item.scope)}</td>
+          <td class=\"muted\">${esc(item.path)}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('historyBody').innerHTML = rows || '<tr><td colspan=\"4\" class=\"muted\">데이터 없음</td></tr>';
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>
+        """
+
+    @app.get("/ui/promoted", response_class=HTMLResponse)
+    def promoted_ui() -> str:
+        return _promoted_ui_html()
+
     @app.post("/api/collab/records")
     def create_record(payload: CreateCollabRecordRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
         allowed = registry.agents
