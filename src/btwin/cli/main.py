@@ -15,7 +15,9 @@ app = typer.Typer(
     help="B-TWIN: AI partner that remembers your thoughts.",
 )
 sources_app = typer.Typer(help="Manage B-TWIN data sources for dashboard workflows.")
+promotion_app = typer.Typer(help="Manage promotion queue operations.")
 app.add_typer(sources_app, name="sources")
+app.add_typer(promotion_app, name="promotion")
 
 console = Console(soft_wrap=True)
 
@@ -227,6 +229,26 @@ def sources_refresh():
     registry.ensure_global_default()
     updated = registry.refresh_entry_counts()
     console.print(f"[green]Refreshed {len(updated)} source(s).[/green]")
+
+
+@promotion_app.command("run")
+def promotion_run(limit: int | None = typer.Option(None, min=1, help="Max approved items to process")):
+    """Run one promotion batch (approved -> queued -> promoted)."""
+    from btwin.core.promotion_store import PromotionStore
+    from btwin.core.promotion_worker import PromotionWorker
+    from btwin.core.storage import Storage
+
+    config = _get_config()
+    storage = Storage(config.data_dir)
+    store = PromotionStore(config.data_dir / "promotion_queue.yaml")
+    worker = PromotionWorker(storage=storage, promotion_store=store)
+
+    result = worker.run_once(limit=limit)
+    console.print(
+        "[green]Promotion batch done[/green] "
+        f"processed={result['processed']} promoted={result['promoted']} "
+        f"skipped={result['skipped']} errors={result['errors']}"
+    )
 
 
 if __name__ == "__main__":

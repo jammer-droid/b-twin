@@ -23,6 +23,7 @@ from btwin.core.promotion_store import (
     PromotionStore,
     PromotionTransitionError,
 )
+from btwin.core.promotion_worker import PromotionWorker
 from btwin.core.storage import Storage
 
 
@@ -74,6 +75,13 @@ class ApprovePromotionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     actor_agent: str = Field(alias="actorAgent")
+
+
+class RunPromotionBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    actor_agent: str = Field(alias="actorAgent")
+    limit: int | None = Field(default=None, ge=1, le=1000)
 
 
 def create_collab_app(
@@ -741,6 +749,37 @@ def create_collab_app(
             "approvedBy": item.approved_by,
             "approvedAt": item.approved_at.isoformat() if item.approved_at else None,
         }
+
+    @app.post("/api/promotions/run-batch")
+    def run_promotions_batch(
+        payload: RunPromotionBatchRequest,
+        x_actor_agent: str | None = Header(default=None, alias="X-Actor-Agent"),
+        x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        actor = x_actor_agent or payload.actor_agent
+
+        actor_decision = validate_actor(actor, registry.agents)
+        if not actor_decision.ok:
+            return _error(403, "FORBIDDEN", actor_decision.message or "forbidden", actor_decision.details)
+        if actor != payload.actor_agent:
+            return _error(403, "FORBIDDEN", "actor must match actorAgent", {"actorAgent": actor})
+
+        approval_decision = validate_promotion_approval(actor)
+        if not approval_decision.ok:
+            return _error(403, "FORBIDDEN", approval_decision.message or "forbidden", approval_decision.details)
+
+        if not admin_token:
+            return _error(403, "FORBIDDEN", "batch run is disabled (no admin token configured)")
+        if x_admin_token != admin_token:
+            return _error(403, "FORBIDDEN", "admin token is required")
+
+        worker = PromotionWorker(storage=storage, promotion_store=promotion_store)
+        result = worker.run_once(limit=payload.limit)
+        return result
+
+    @app.get("/api/promotions/history")
+    def promotions_history():
+        return {"items": storage.list_promoted_entries()}
 
     @app.post("/api/admin/agents/reload")
     def reload_agents(

@@ -187,6 +187,32 @@ class Storage:
             return 0
         return len(list(promoted_dir.glob("*.md")))
 
+    def list_promoted_entries(self) -> list[dict[str, str]]:
+        promoted_dir = self.promoted_entries_dir / "promoted"
+        if not promoted_dir.exists():
+            return []
+
+        items: list[dict[str, str]] = []
+        for file_path in sorted(promoted_dir.glob("*.md")):
+            raw = file_path.read_text()
+            metadata = self._parse_frontmatter_metadata(raw)
+            if metadata is None:
+                continue
+
+            item_id = str(metadata.get("promotionItemId", file_path.stem))
+            source_record_id = str(metadata.get("sourceRecordId", ""))
+            scope = str(metadata.get("scope", "global"))
+            items.append(
+                {
+                    "itemId": item_id,
+                    "sourceRecordId": source_record_id,
+                    "scope": scope,
+                    "path": str(file_path),
+                }
+            )
+
+        return items
+
     def _find_collab_file(self, record_id: str) -> tuple[CollabRecord, Path, str] | None:
         for file_path in self._iter_collab_files():
             loaded = self._load_collab_file(file_path)
@@ -214,14 +240,19 @@ class Storage:
         return parsed, body
 
     @staticmethod
-    def _parse_collab_frontmatter(raw: str) -> CollabRecord | None:
+    def _parse_frontmatter_metadata(raw: str) -> dict[str, object] | None:
         if not raw.startswith("---\n"):
             return None
         parts = raw.split("---\n", 2)
         if len(parts) < 3:
             return None
+        return yaml.safe_load(parts[1]) or {}
 
-        metadata = yaml.safe_load(parts[1]) or {}
+    @staticmethod
+    def _parse_collab_frontmatter(raw: str) -> CollabRecord | None:
+        metadata = Storage._parse_frontmatter_metadata(raw)
+        if metadata is None:
+            return None
         try:
             return CollabRecord.model_validate(metadata)
         except Exception:

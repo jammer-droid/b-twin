@@ -132,3 +132,62 @@ def test_approve_returns_not_found_for_missing_item(tmp_path: Path):
 
     assert res.status_code == 404
     assert res.json()["errorCode"] == "PROMOTION_NOT_FOUND"
+
+
+def test_run_batch_requires_main_and_admin_token(tmp_path: Path):
+    client = _client(tmp_path)
+
+    denied = client.post(
+        "/api/promotions/run-batch",
+        json={"actorAgent": "main"},
+        headers={"X-Actor-Agent": "main"},
+    )
+    assert denied.status_code == 403
+    assert denied.json()["errorCode"] == "FORBIDDEN"
+
+    denied_non_main = client.post(
+        "/api/promotions/run-batch",
+        json={"actorAgent": "codex-code"},
+        headers={"X-Actor-Agent": "codex-code", "X-Admin-Token": "secret-token"},
+    )
+    assert denied_non_main.status_code == 403
+    assert denied_non_main.json()["errorCode"] == "FORBIDDEN"
+
+
+def test_run_batch_promotes_approved_items_and_history(tmp_path: Path):
+    client = _client(tmp_path)
+    record_id = _create_collab_record(client)
+
+    proposed = client.post(
+        "/api/promotions/propose",
+        json={
+            "sourceRecordId": record_id,
+            "proposedBy": "codex-code",
+        },
+        headers={"X-Actor-Agent": "codex-code"},
+    )
+    assert proposed.status_code == 201
+    item_id = proposed.json()["itemId"]
+
+    approved = client.post(
+        f"/api/promotions/{item_id}/approve",
+        json={"actorAgent": "main"},
+        headers={"X-Actor-Agent": "main"},
+    )
+    assert approved.status_code == 200
+
+    batch = client.post(
+        "/api/promotions/run-batch",
+        json={"actorAgent": "main"},
+        headers={"X-Actor-Agent": "main", "X-Admin-Token": "secret-token"},
+    )
+    assert batch.status_code == 200
+    assert batch.json()["promoted"] == 1
+
+    history = client.get("/api/promotions/history")
+    assert history.status_code == 200
+    items = history.json()["items"]
+    assert len(items) == 1
+    assert items[0]["itemId"] == item_id
+    assert items[0]["sourceRecordId"] == record_id
+    assert items[0]["scope"] == "global"
