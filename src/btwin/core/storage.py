@@ -11,6 +11,8 @@ from btwin.core.collab_models import CollabRecord
 from btwin.core.document_contracts import validate_document_contract
 from btwin.core.models import Entry
 
+_FRAMEWORK_DIRS = {"convo", "collab", "global"}
+
 
 class Storage:
     def __init__(self, data_dir: Path) -> None:
@@ -75,6 +77,8 @@ class Storage:
             return entries
         for date_dir in sorted(self.entries_dir.iterdir()):
             if not date_dir.is_dir():
+                continue
+            if date_dir.name in _FRAMEWORK_DIRS:
                 continue
             for md_file in sorted(date_dir.glob("*.md")):
                 raw = md_file.read_text()
@@ -276,7 +280,7 @@ class Storage:
             for date_dir in sorted(self.entries_dir.iterdir()):
                 if not date_dir.is_dir():
                     continue
-                if date_dir.name in {"convo", "collab", "global"}:
+                if date_dir.name in _FRAMEWORK_DIRS:
                     continue
                 for md_file in sorted(date_dir.glob("*.md")):
                     docs.append(self._index_doc_info(md_file, record_type="entry"))

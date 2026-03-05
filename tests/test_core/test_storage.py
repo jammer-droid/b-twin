@@ -189,6 +189,31 @@ def test_save_entry_no_collision_works_as_before(tmp_path):
     assert loaded.content == "# New\n\nBrand new entry."
 
 
+def test_list_entries_excludes_framework_dirs(tmp_path):
+    """list_entries() must skip convo/, collab/, and global/ subdirectories."""
+    storage = Storage(data_dir=tmp_path)
+
+    # Regular entry
+    storage.save_entry(Entry(
+        date="2026-03-05",
+        slug="real-note",
+        content="# Real Note",
+        metadata={"topic": "test"},
+    ))
+
+    # Files under framework dirs that should be excluded
+    for framework_dir in ("convo", "collab", "global"):
+        dir_path = tmp_path / "entries" / framework_dir / "2026-03-05"
+        dir_path.mkdir(parents=True, exist_ok=True)
+        (dir_path / "should-not-appear.md").write_text(
+            "---\nslug: should-not-appear\n---\n\nHidden content."
+        )
+
+    entries = storage.list_entries()
+    slugs = [e.slug for e in entries]
+    assert slugs == ["real-note"]
+
+
 def test_save_convo_record_rejects_invalid_contract(tmp_path, monkeypatch):
     storage = Storage(data_dir=tmp_path)
 
