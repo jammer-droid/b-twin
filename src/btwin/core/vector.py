@@ -50,6 +50,15 @@ class VectorStore:
             })
         return output
 
+    def delete(self, doc_id: str) -> None:
+        """Delete a document from the vector store by id."""
+        self._collection.delete(ids=[doc_id])
+
+    def has(self, doc_id: str) -> bool:
+        """Return whether a document exists in the vector store."""
+        result = self._collection.get(ids=[doc_id], include=[])
+        return bool(result["ids"])
+
     def count(self) -> int:
         """Return the number of documents in the store."""
         return self._collection.count()

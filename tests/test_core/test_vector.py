@@ -39,3 +39,23 @@ def test_count(tmp_path):
     assert store.count() == 0
     store.add(doc_id="doc-1", content="First entry", metadata={"date": "2026-03-02", "slug": "first"})
     assert store.count() == 1
+
+
+def test_has(tmp_path):
+    store = VectorStore(persist_dir=tmp_path / "index")
+    assert store.has("doc-1") is False
+
+    store.add(doc_id="doc-1", content="Entry", metadata={"date": "2026-03-02", "slug": "entry"})
+    assert store.has("doc-1") is True
+
+
+def test_delete(tmp_path):
+    store = VectorStore(persist_dir=tmp_path / "index")
+    store.add(doc_id="doc-1", content="Entry", metadata={"date": "2026-03-02", "slug": "entry"})
+    store.add(doc_id="doc-2", content="Entry 2", metadata={"date": "2026-03-02", "slug": "entry-2"})
+
+    store.delete("doc-1")
+
+    assert store.has("doc-1") is False
+    assert store.has("doc-2") is True
+    assert store.count() == 1
