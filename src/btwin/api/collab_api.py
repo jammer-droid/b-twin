@@ -331,6 +331,132 @@ def create_collab_app(
     def collab_ui() -> str:
         return _ui_html()
 
+    def _promotions_ui_html() -> str:
+        return """
+<!doctype html>
+<html lang=\"ko\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>B-TWIN Promotions Dashboard</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; color: #0f172a; }
+    h1 { margin: 0 0 16px; }
+    .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 8px; text-align: left; }
+    .status { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid #cbd5e1; }
+    .status.proposed { background: #fff7ed; }
+    .status.approved { background: #eff6ff; }
+    .status.queued { background: #f5f3ff; }
+    .status.promoted { background: #f0fdf4; }
+    button { border: 1px solid #cbd5e1; background: #fff; border-radius: 8px; padding: 4px 8px; cursor: pointer; }
+    .error { margin-top: 12px; padding: 10px; border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; display: none; }
+  </style>
+</head>
+<body>
+  <h1>Promotions</h1>
+  <div class=\"toolbar\">
+    <label for=\"statusFilter\">상태</label>
+    <select id=\"statusFilter\">
+      <option value=\"proposed\" selected>proposed</option>
+      <option value=\"approved\">approved</option>
+      <option value=\"queued\">queued</option>
+      <option value=\"promoted\">promoted</option>
+      <option value=\"all\">all</option>
+    </select>
+    <input id=\"actorInput\" placeholder=\"actor(main)\" value=\"main\" />
+    <button id=\"refreshBtn\">새로고침</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>itemId</th><th>sourceRecordId</th><th>status</th><th>proposedBy</th><th>action</th></tr>
+    </thead>
+    <tbody id=\"promotionsBody\"></tbody>
+  </table>
+
+  <div id=\"errorPanel\" class=\"error\"></div>
+
+  <script>
+    function esc(v) {
+      return String(v ?? '').replace(/[&<>\"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    function showError(message, traceId) {
+      const el = document.getElementById('errorPanel');
+      if (!message) {
+        el.style.display = 'none';
+        el.textContent = '';
+        return;
+      }
+      el.style.display = 'block';
+      el.innerHTML = `<strong>${esc(message)}</strong><div>traceId: ${esc(traceId || '-')}</div>`;
+    }
+
+    async function loadPromotions() {
+      showError('');
+      const status = document.getElementById('statusFilter').value;
+      const q = status === 'all' ? '' : `?status=${encodeURIComponent(status)}`;
+      const res = await fetch(`/api/promotions${q}`);
+      const data = await res.json();
+
+      const items = data.items || [];
+      const rows = items.map(item => {
+        const approveBtn = item.status === 'proposed'
+          ? `<button data-approve=\"${esc(item.itemId)}\">approve</button>`
+          : '';
+
+        return `
+          <tr>
+            <td>${esc(item.itemId)}</td>
+            <td>${esc(item.sourceRecordId)}</td>
+            <td><span class=\"status ${esc(item.status)}\">${esc(item.status)}</span></td>
+            <td>${esc(item.proposedBy)}</td>
+            <td>${approveBtn}</td>
+          </tr>
+        `;
+      }).join('');
+
+      const body = document.getElementById('promotionsBody');
+      body.innerHTML = rows || '<tr><td colspan=\"5\">데이터 없음</td></tr>';
+
+      body.querySelectorAll('button[data-approve]').forEach(btn => {
+        btn.addEventListener('click', () => approve(btn.getAttribute('data-approve')));
+      });
+    }
+
+    async function approve(itemId) {
+      showError('');
+      const actor = document.getElementById('actorInput').value;
+      const res = await fetch(`/api/promotions/${encodeURIComponent(itemId)}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Actor-Agent': actor,
+        },
+        body: JSON.stringify({ actorAgent: actor }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.message, data.traceId);
+        return;
+      }
+      await loadPromotions();
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadPromotions);
+    document.getElementById('statusFilter').addEventListener('change', loadPromotions);
+    loadPromotions();
+  </script>
+</body>
+</html>
+        """
+
+    @app.get("/ui/promotions", response_class=HTMLResponse)
+    def promotions_ui() -> str:
+        return _promotions_ui_html()
+
     @app.post("/api/collab/records")
     def create_record(payload: CreateCollabRecordRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
         allowed = registry.agents
