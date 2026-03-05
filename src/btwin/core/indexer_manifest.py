@@ -68,7 +68,14 @@ class IndexManifest:
         return [item.model_copy(deep=True) for item in self._entries.values() if item.status == status]
 
     def summary(self) -> dict[str, int]:
-        counts: dict[str, int] = {"total": len(self._entries)}
+        counts: dict[str, int] = {
+            "total": len(self._entries),
+            "pending": 0,
+            "indexed": 0,
+            "stale": 0,
+            "failed": 0,
+            "deleted": 0,
+        }
         for item in self._entries.values():
             counts[item.status] = counts.get(item.status, 0) + 1
         return counts

@@ -18,6 +18,7 @@ from btwin.core.agent_registry import AgentRegistry
 from btwin.core.audit import AuditLogger
 from btwin.core.collab_models import CollabRecord, CollabStatus, generate_record_id
 from btwin.core.gate import apply_transition, validate_actor, validate_promotion_approval
+from btwin.core.indexer import CoreIndexer
 from btwin.core.promotion_store import (
     PromotionActorRequiredError,
     PromotionItemNotFoundError,
@@ -85,6 +86,14 @@ class RunPromotionBatchRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1, le=1000)
 
 
+class IndexerActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    actor_agent: str = Field(alias="actorAgent")
+    limit: int | None = Field(default=None, ge=1, le=1000)
+    doc_id: str | None = Field(default=None, alias="docId")
+
+
 def create_collab_app(
     data_dir: Path,
     *,
@@ -110,6 +119,9 @@ def create_collab_app(
     def _audit(event_type: str, payload: dict[str, object]) -> None:
         audit_logger.log(event_type=event_type, payload=payload)
 
+    def _indexer() -> CoreIndexer:
+        return CoreIndexer(data_dir=data_dir)
+
     def _error(status_code: int, error_code: str, message: str, details: dict[str, object] | None = None) -> JSONResponse:
         return JSONResponse(
             status_code=status_code,
@@ -127,6 +139,17 @@ def create_collab_app(
         if x_admin_token == admin_token:
             return None
         return _error(403, "FORBIDDEN", "admin token is required")
+
+    def _require_main_admin(actor: str, x_admin_token: str | None) -> JSONResponse | None:
+        actor_decision = validate_actor(actor, registry.agents)
+        if not actor_decision.ok:
+            return _error(403, "FORBIDDEN", actor_decision.message or "forbidden", actor_decision.details)
+
+        approval_decision = validate_promotion_approval(actor)
+        if not approval_decision.ok:
+            return _error(403, "FORBIDDEN", approval_decision.message or "forbidden", approval_decision.details)
+
+        return _require_admin_token_if_configured(x_admin_token)
 
     def _payload_hash(payload: dict[str, object]) -> str:
         normalized = json.dumps(payload, sort_keys=True, ensure_ascii=False)
@@ -1065,6 +1088,66 @@ def create_collab_app(
         if auth_error is not None:
             return auth_error
         return {"items": storage.list_promoted_entries()}
+
+    @app.get("/api/indexer/status")
+    def indexer_status(x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        auth_error = _require_admin_token_if_configured(x_admin_token)
+        if auth_error is not None:
+            return auth_error
+        return _indexer().status_summary()
+
+    @app.post("/api/indexer/refresh")
+    def indexer_refresh(
+        payload: IndexerActionRequest,
+        x_actor_agent: str | None = Header(default=None, alias="X-Actor-Agent"),
+        x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        actor = x_actor_agent or payload.actor_agent
+        auth_error = _require_main_admin(actor, x_admin_token)
+        if auth_error is not None:
+            return auth_error
+        if actor != payload.actor_agent:
+            return _error(403, "FORBIDDEN", "actor must match actorAgent", {"actorAgent": actor})
+
+        result = _indexer().refresh(limit=payload.limit)
+        _audit("indexer_refresh", {"actorAgent": actor, **result})
+        return result
+
+    @app.post("/api/indexer/reconcile")
+    def indexer_reconcile(
+        payload: IndexerActionRequest,
+        x_actor_agent: str | None = Header(default=None, alias="X-Actor-Agent"),
+        x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        actor = x_actor_agent or payload.actor_agent
+        auth_error = _require_main_admin(actor, x_admin_token)
+        if auth_error is not None:
+            return auth_error
+        if actor != payload.actor_agent:
+            return _error(403, "FORBIDDEN", "actor must match actorAgent", {"actorAgent": actor})
+
+        result = _indexer().reconcile()
+        _audit("indexer_reconcile", {"actorAgent": actor, **result})
+        return result
+
+    @app.post("/api/indexer/repair")
+    def indexer_repair(
+        payload: IndexerActionRequest,
+        x_actor_agent: str | None = Header(default=None, alias="X-Actor-Agent"),
+        x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        actor = x_actor_agent or payload.actor_agent
+        auth_error = _require_main_admin(actor, x_admin_token)
+        if auth_error is not None:
+            return auth_error
+        if actor != payload.actor_agent:
+            return _error(403, "FORBIDDEN", "actor must match actorAgent", {"actorAgent": actor})
+        if not payload.doc_id:
+            return _error(422, "INVALID_SCHEMA", "docId is required")
+
+        result = _indexer().repair(payload.doc_id)
+        _audit("indexer_repair", {"actorAgent": actor, **result})
+        return result
 
     @app.post("/api/admin/agents/reload")
     def reload_agents(
