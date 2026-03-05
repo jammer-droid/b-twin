@@ -125,3 +125,63 @@ def test_read_entry_preserves_structured_frontmatter(tmp_path):
     assert loaded.metadata["tags"] == ["ux", "dashboard"]
     assert loaded.metadata["related"] == ["2026-03-01-note-1", "2026-03-02-note-9"]
     assert loaded.metadata["importance"] == "high"
+
+
+def test_save_entry_merges_on_collision(tmp_path):
+    storage = Storage(data_dir=tmp_path)
+    entry1 = Entry(
+        date="2026-03-02",
+        slug="merge-test",
+        content="# First\n\nFirst content.",
+        metadata={"tags": ["alpha"]},
+    )
+    entry2 = Entry(
+        date="2026-03-02",
+        slug="merge-test",
+        content="Second content.",
+        metadata={"tags": ["beta"]},
+    )
+    storage.save_entry(entry1)
+    storage.save_entry(entry2)
+
+    loaded = storage.read_entry("2026-03-02", "merge-test")
+    assert loaded is not None
+    assert "First content." in loaded.content
+    assert "Second content." in loaded.content
+    assert "---" in loaded.content
+    assert set(loaded.metadata["tags"]) == {"alpha", "beta"}
+
+
+def test_save_entry_merges_tags_union(tmp_path):
+    storage = Storage(data_dir=tmp_path)
+    entry1 = Entry(
+        date="2026-03-02",
+        slug="tag-merge",
+        content="Content A",
+        metadata={"tags": ["a", "b"]},
+    )
+    entry2 = Entry(
+        date="2026-03-02",
+        slug="tag-merge",
+        content="Content B",
+        metadata={"tags": ["b", "c"]},
+    )
+    storage.save_entry(entry1)
+    storage.save_entry(entry2)
+
+    loaded = storage.read_entry("2026-03-02", "tag-merge")
+    assert set(loaded.metadata["tags"]) == {"a", "b", "c"}
+
+
+def test_save_entry_no_collision_works_as_before(tmp_path):
+    storage = Storage(data_dir=tmp_path)
+    entry = Entry(
+        date="2026-03-02",
+        slug="no-collision",
+        content="# New\n\nBrand new entry.",
+        metadata={"topic": "test"},
+    )
+    saved_path = storage.save_entry(entry)
+    assert saved_path.exists()
+    loaded = storage.read_entry("2026-03-02", "no-collision")
+    assert loaded.content == "# New\n\nBrand new entry."

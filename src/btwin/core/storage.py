@@ -13,18 +13,32 @@ class Storage:
         self.entries_dir = data_dir / "entries"
 
     def save_entry(self, entry: Entry) -> Path:
-        """Save an entry as a markdown file with YAML frontmatter."""
+        """Save an entry. If same date/slug exists, merge content and tags."""
         date_dir = self.entries_dir / entry.date
         date_dir.mkdir(parents=True, exist_ok=True)
         file_path = date_dir / f"{entry.slug}.md"
 
-        # Build frontmatter (canonical date/slug always win over metadata)
-        fm = dict(entry.metadata)
+        merged_metadata = dict(entry.metadata)
+        merged_content = entry.content
+
+        if file_path.exists():
+            existing = self._parse_file(file_path.read_text(), entry.date, entry.slug)
+            merged_content = existing.content.rstrip() + "\n\n---\n\n" + entry.content
+            merged_metadata = dict(existing.metadata)
+            merged_metadata.update(entry.metadata)
+            existing_tags = existing.metadata.get("tags", [])
+            new_tags = entry.metadata.get("tags", [])
+            if existing_tags or new_tags:
+                merged_metadata["tags"] = list(dict.fromkeys(
+                    list(existing_tags) + list(new_tags)
+                ))
+
+        fm = dict(merged_metadata)
         fm["date"] = entry.date
         fm["slug"] = entry.slug
         frontmatter = yaml.dump(fm, default_flow_style=False, allow_unicode=True).strip()
 
-        file_path.write_text(f"---\n{frontmatter}\n---\n\n{entry.content}")
+        file_path.write_text(f"---\n{frontmatter}\n---\n\n{merged_content}")
         return file_path
 
     def _parse_file(self, raw: str, date: str, slug: str) -> Entry:
