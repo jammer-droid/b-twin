@@ -112,10 +112,12 @@ def test_btwin_record(mock_get_twin):
     assert "Recorded" in result
 
 
+@patch("btwin.mcp.server._get_audit_logger")
 @patch("btwin.mcp.server._get_twin")
-def test_btwin_convo_record(mock_get_twin):
+def test_btwin_convo_record(mock_get_twin, mock_get_audit_logger):
     mock = _mock_twin()
     mock_get_twin.return_value = mock
+    mock_get_audit_logger.return_value = MagicMock()
 
     result = btwin_convo_record("기억해줘", requested_by_user=True)
 

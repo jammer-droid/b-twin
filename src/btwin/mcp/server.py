@@ -12,6 +12,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from btwin.config import BTwinConfig, load_config
+from btwin.core.audit import AuditLogger
 from btwin.core.btwin import BTwin
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
@@ -20,6 +21,7 @@ log = logging.getLogger(__name__)
 mcp = FastMCP("btwin")
 
 _twin: BTwin | None = None
+_audit_logger: AuditLogger | None = None
 
 
 def _get_twin() -> BTwin:
@@ -36,6 +38,14 @@ def _get_twin() -> BTwin:
             config = load_config(project_config)
         _twin = BTwin(config)
     return _twin
+
+
+def _get_audit_logger() -> AuditLogger:
+    global _audit_logger
+    if _audit_logger is None:
+        twin = _get_twin()
+        _audit_logger = AuditLogger(twin.config.data_dir / "audit.log.jsonl")
+    return _audit_logger
 
 
 @mcp.tool()
@@ -121,6 +131,13 @@ def btwin_convo_record(content: str, requested_by_user: bool = False) -> str:
     """
     twin = _get_twin()
     result = twin.record_convo(content, requested_by_user=requested_by_user)
+    _get_audit_logger().log(
+        event_type="mcp_convo_recorded",
+        payload={
+            "requestedByUser": requested_by_user,
+            "path": result["path"],
+        },
+    )
     return f"Convo recorded: {result['path']}"
 
 

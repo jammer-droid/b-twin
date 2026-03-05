@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from btwin.config import BTwinConfig, load_config
 from btwin.core.agent_registry import AgentRegistry
+from btwin.core.audit import AuditLogger
 from btwin.core.collab_models import CollabRecord, CollabStatus, generate_record_id
 from btwin.core.gate import apply_transition, validate_actor, validate_promotion_approval
 from btwin.core.promotion_store import (
@@ -95,6 +96,7 @@ def create_collab_app(
     app = FastAPI(title="B-TWIN Collab API", version="0.1")
     storage = Storage(data_dir)
     promotion_store = PromotionStore(data_dir / "promotion_queue.yaml")
+    audit_logger = AuditLogger(data_dir / "audit.log.jsonl")
     registry = AgentRegistry(
         config_path=Path(openclaw_config_path).expanduser() if openclaw_config_path else None,
         extra_agents=extra_agents,
@@ -104,6 +106,9 @@ def create_collab_app(
 
     def _trace_id() -> str:
         return f"trc_{uuid4().hex[:12]}"
+
+    def _audit(event_type: str, payload: dict[str, object]) -> None:
+        audit_logger.log(event_type=event_type, payload=payload)
 
     def _error(status_code: int, error_code: str, message: str, details: dict[str, object] | None = None) -> JSONResponse:
         return JSONResponse(
@@ -781,6 +786,16 @@ def create_collab_app(
 
         decision = apply_transition(record, "handed_off", payload.expected_version)
         if not decision.ok:
+            _audit(
+                "gate_rejected",
+                {
+                    "endpoint": "/api/collab/handoff",
+                    "errorCode": decision.error_code or "GATE_REJECTED",
+                    "recordId": payload.record_id,
+                    "actorAgent": actor,
+                    "details": decision.details,
+                },
+            )
             return _error(409, decision.error_code or "GATE_REJECTED", decision.message, decision.details)
 
         if decision.idempotent:
@@ -829,6 +844,16 @@ def create_collab_app(
 
         decision = apply_transition(record, "completed", payload.expected_version)
         if not decision.ok:
+            _audit(
+                "gate_rejected",
+                {
+                    "endpoint": "/api/collab/complete",
+                    "errorCode": decision.error_code or "GATE_REJECTED",
+                    "recordId": payload.record_id,
+                    "actorAgent": actor,
+                    "details": decision.details,
+                },
+            )
             return _error(409, decision.error_code or "GATE_REJECTED", decision.message, decision.details)
 
         if decision.idempotent:
@@ -864,6 +889,14 @@ def create_collab_app(
             return _error(404, "RECORD_NOT_FOUND", "source collab record not found", {"sourceRecordId": payload.source_record_id})
 
         item = promotion_store.enqueue(source_record_id=payload.source_record_id, proposed_by=payload.proposed_by)
+        _audit(
+            "promotion_proposed",
+            {
+                "itemId": item.item_id,
+                "sourceRecordId": item.source_record_id,
+                "proposedBy": item.proposed_by,
+            },
+        )
         return JSONResponse(
             status_code=201,
             content={
@@ -922,6 +955,13 @@ def create_collab_app(
         except PromotionTransitionError as exc:
             return _error(409, "INVALID_STATE_TRANSITION", str(exc), {"itemId": item_id})
 
+        _audit(
+            "promotion_approved",
+            {
+                "itemId": item.item_id,
+                "approvedBy": item.approved_by or actor,
+            },
+        )
         return {
             "itemId": item.item_id,
             "status": item.status,
@@ -954,6 +994,14 @@ def create_collab_app(
 
         worker = PromotionWorker(storage=storage, promotion_store=promotion_store)
         result = worker.run_once(limit=payload.limit)
+        _audit(
+            "promotion_batch_run",
+            {
+                "actorAgent": actor,
+                "limit": payload.limit,
+                **result,
+            },
+        )
         return result
 
     @app.get("/api/promotions/history")
