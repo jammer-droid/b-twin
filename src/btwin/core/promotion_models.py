@@ -11,7 +11,7 @@ PromotionStatus = Literal["proposed", "approved", "queued", "promoted"]
 
 
 class PromotionItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     item_id: str = Field(min_length=1)
     source_record_id: str = Field(min_length=1)
