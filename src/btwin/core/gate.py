@@ -46,6 +46,18 @@ def validate_actor(actor_agent: str, allowed_agents: set[str]) -> GateDecision:
     )
 
 
+def validate_promotion_approval(actor_agent: str) -> GateDecision:
+    if actor_agent == "main":
+        return GateDecision(ok=True)
+
+    return GateDecision(
+        ok=False,
+        error_code="FORBIDDEN",
+        message="only Vincent(main) can approve promotion",
+        details={"actorAgent": actor_agent},
+    )
+
+
 def apply_transition(record: CollabRecord, target_status: CollabStatus, expected_version: int) -> GateDecision:
     """Apply collab status transition with idempotency and CAS checks.
 

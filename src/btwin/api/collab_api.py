@@ -16,7 +16,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from btwin.config import BTwinConfig, load_config
 from btwin.core.agent_registry import AgentRegistry
 from btwin.core.collab_models import CollabRecord, CollabStatus, generate_record_id
-from btwin.core.gate import apply_transition, validate_actor
+from btwin.core.gate import apply_transition, validate_actor, validate_promotion_approval
+from btwin.core.promotion_store import (
+    PromotionActorRequiredError,
+    PromotionItemNotFoundError,
+    PromotionStore,
+    PromotionTransitionError,
+)
 from btwin.core.storage import Storage
 
 
@@ -57,6 +63,19 @@ class ReloadRequest(BaseModel):
     override_path: str | None = Field(default=None, alias="overridePath")
 
 
+class ProposePromotionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    source_record_id: str = Field(alias="sourceRecordId")
+    proposed_by: str = Field(alias="proposedBy")
+
+
+class ApprovePromotionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    actor_agent: str = Field(alias="actorAgent")
+
+
 def create_collab_app(
     data_dir: Path,
     *,
@@ -67,6 +86,7 @@ def create_collab_app(
 ) -> FastAPI:
     app = FastAPI(title="B-TWIN Collab API", version="0.1")
     storage = Storage(data_dir)
+    promotion_store = PromotionStore(data_dir / "promotion_queue.yaml")
     registry = AgentRegistry(
         config_path=Path(openclaw_config_path).expanduser() if openclaw_config_path else None,
         extra_agents=extra_agents,
@@ -515,6 +535,85 @@ def create_collab_app(
             "status": updated.status,
             "version": updated.version,
             "idempotent": False,
+        }
+
+    @app.post("/api/promotions/propose")
+    def propose_promotion(payload: ProposePromotionRequest, x_actor_agent: str | None = Header(default=None, alias="X-Actor-Agent")):
+        actor = x_actor_agent or payload.proposed_by
+
+        actor_decision = validate_actor(actor, registry.agents)
+        if not actor_decision.ok:
+            return _error(403, "FORBIDDEN", actor_decision.message or "forbidden", actor_decision.details)
+        if actor != payload.proposed_by:
+            return _error(403, "FORBIDDEN", "actor must match proposedBy", {"actorAgent": actor, "proposedBy": payload.proposed_by})
+
+        if storage.read_collab_record(payload.source_record_id) is None:
+            return _error(404, "RECORD_NOT_FOUND", "source collab record not found", {"sourceRecordId": payload.source_record_id})
+
+        item = promotion_store.enqueue(source_record_id=payload.source_record_id, proposed_by=payload.proposed_by)
+        return JSONResponse(
+            status_code=201,
+            content={
+                "itemId": item.item_id,
+                "sourceRecordId": item.source_record_id,
+                "status": item.status,
+                "proposedBy": item.proposed_by,
+                "proposedAt": item.proposed_at.isoformat(),
+            },
+        )
+
+    @app.get("/api/promotions")
+    def list_promotions(status: str | None = None):
+        items = promotion_store.list_items(status=status if status else None)
+        return {
+            "items": [
+                {
+                    "itemId": item.item_id,
+                    "sourceRecordId": item.source_record_id,
+                    "status": item.status,
+                    "proposedBy": item.proposed_by,
+                    "proposedAt": item.proposed_at.isoformat(),
+                    "approvedBy": item.approved_by,
+                    "approvedAt": item.approved_at.isoformat() if item.approved_at else None,
+                    "queuedAt": item.queued_at.isoformat() if item.queued_at else None,
+                    "promotedAt": item.promoted_at.isoformat() if item.promoted_at else None,
+                }
+                for item in items
+            ]
+        }
+
+    @app.post("/api/promotions/{item_id}/approve")
+    def approve_promotion(
+        item_id: str,
+        payload: ApprovePromotionRequest,
+        x_actor_agent: str | None = Header(default=None, alias="X-Actor-Agent"),
+    ):
+        actor = x_actor_agent or payload.actor_agent
+
+        actor_decision = validate_actor(actor, registry.agents)
+        if not actor_decision.ok:
+            return _error(403, "FORBIDDEN", actor_decision.message or "forbidden", actor_decision.details)
+        if actor != payload.actor_agent:
+            return _error(403, "FORBIDDEN", "actor must match actorAgent", {"actorAgent": actor})
+
+        approval_decision = validate_promotion_approval(actor)
+        if not approval_decision.ok:
+            return _error(403, "FORBIDDEN", approval_decision.message or "forbidden", approval_decision.details)
+
+        try:
+            item = promotion_store.set_status(item_id, "approved", actor=actor)
+        except PromotionItemNotFoundError:
+            return _error(404, "PROMOTION_NOT_FOUND", "promotion item not found", {"itemId": item_id})
+        except PromotionActorRequiredError:
+            return _error(422, "INVALID_SCHEMA", "actor is required for approval")
+        except PromotionTransitionError as exc:
+            return _error(409, "INVALID_STATE_TRANSITION", str(exc), {"itemId": item_id})
+
+        return {
+            "itemId": item.item_id,
+            "status": item.status,
+            "approvedBy": item.approved_by,
+            "approvedAt": item.approved_at.isoformat() if item.approved_at else None,
         }
 
     @app.post("/api/admin/agents/reload")

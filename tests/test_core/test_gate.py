@@ -1,5 +1,5 @@
 from btwin.core.collab_models import CollabRecord
-from btwin.core.gate import apply_transition, validate_actor
+from btwin.core.gate import apply_transition, validate_actor, validate_promotion_approval
 
 
 def _record(status: str = "draft", version: int = 1) -> CollabRecord:
@@ -118,6 +118,20 @@ def test_validate_actor_accepts_known_actor() -> None:
 
 def test_validate_actor_rejects_unknown_actor() -> None:
     decision = validate_actor("unknown-agent", {"main", "codex-code", "research-bot"})
+
+    assert decision.ok is False
+    assert decision.error_code == "FORBIDDEN"
+
+
+def test_validate_promotion_approval_accepts_main() -> None:
+    decision = validate_promotion_approval("main")
+
+    assert decision.ok is True
+    assert decision.error_code is None
+
+
+def test_validate_promotion_approval_rejects_non_main() -> None:
+    decision = validate_promotion_approval("research-bot")
 
     assert decision.ok is False
     assert decision.error_code == "FORBIDDEN"
