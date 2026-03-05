@@ -66,6 +66,16 @@ class CoreIndexer:
                 continue
 
             try:
+                current_checksum = self._sha256(source_path)
+                if current_checksum != item.checksum:
+                    item = self.manifest.upsert(
+                        doc_id=item.doc_id,
+                        path=item.path,
+                        record_type=item.record_type,
+                        checksum=current_checksum,
+                        status=item.status,
+                    )
+
                 content = source_path.read_text(encoding="utf-8")
                 self.vector_store.add(
                     doc_id=item.doc_id,

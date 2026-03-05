@@ -101,3 +101,28 @@ def test_repair_targets_specific_doc_even_with_other_pending_items(tmp_path):
 
     assert result["ok"] is True
     assert idx.manifest.get(target_rel).status == "indexed"
+
+
+def test_refresh_recomputes_checksum_before_indexing_backlog_doc(tmp_path):
+    idx = CoreIndexer(data_dir=tmp_path)
+    entry = idx.storage.save_convo_record(content="v1", requested_by_user=True)
+    file_path = idx.storage.convo_entries_dir / entry.date / f"{entry.slug}.md"
+    rel = str(file_path.relative_to(tmp_path))
+
+    idx.mark_pending(
+        doc_id=rel,
+        path=rel,
+        record_type="convo",
+        checksum=_sha256_for(file_path),
+    )
+
+    file_path.write_text("---\ndate: 2026-03-05\nslug: edited\nrecordType: convo\nrequestedByUser: true\ncreated_at: 2026-03-05T00:00:00+00:00\n---\n\nv2\n")
+    new_checksum = _sha256_for(file_path)
+
+    idx.refresh(limit=10)
+
+    item = idx.manifest.get(rel)
+    assert item is not None
+    assert item.status == "indexed"
+    assert item.checksum == new_checksum
+    assert item.doc_version == 2
