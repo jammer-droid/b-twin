@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Literal
 
 from btwin.core.collab_models import CollabRecord, CollabStatus
@@ -13,11 +14,13 @@ GateErrorCode = Literal[
     "FORBIDDEN",
 ]
 
-_ALLOWED_TRANSITIONS: dict[CollabStatus, set[CollabStatus]] = {
-    "draft": {"handed_off", "completed"},
-    "handed_off": {"completed"},
-    "completed": set(),
-}
+_ALLOWED_TRANSITIONS: MappingProxyType[CollabStatus, frozenset[CollabStatus]] = MappingProxyType(
+    {
+        "draft": frozenset({"handed_off", "completed"}),
+        "handed_off": frozenset({"completed"}),
+        "completed": frozenset(),
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -44,14 +47,12 @@ def validate_actor(actor_agent: str, allowed_agents: set[str]) -> GateDecision:
 
 
 def apply_transition(record: CollabRecord, target_status: CollabStatus, expected_version: int) -> GateDecision:
-    if record.version != expected_version:
-        return GateDecision(
-            ok=False,
-            error_code="CONCURRENT_MODIFICATION",
-            message="expectedVersion does not match current version",
-            details={"currentVersion": record.version, "expectedVersion": expected_version},
-        )
+    """Apply collab status transition with idempotency and CAS checks.
 
+    Precedence policy:
+    1) If record is already in target status, treat as idempotent success.
+    2) Otherwise enforce expectedVersion CAS for concurrent modification detection.
+    """
     if record.status == target_status:
         return GateDecision(
             ok=True,
@@ -59,6 +60,15 @@ def apply_transition(record: CollabRecord, target_status: CollabStatus, expected
             status=record.status,
             version=record.version,
             message="idempotent retry",
+            details={"currentVersion": record.version, "expectedVersion": expected_version},
+        )
+
+    if record.version != expected_version:
+        return GateDecision(
+            ok=False,
+            error_code="CONCURRENT_MODIFICATION",
+            message="expectedVersion does not match current version",
+            details={"currentVersion": record.version, "expectedVersion": expected_version},
         )
 
     allowed_targets = _ALLOWED_TRANSITIONS.get(record.status, set())
