@@ -1,5 +1,6 @@
 """B-TWIN CLI — command-line interface."""
 
+import re
 from pathlib import Path
 
 import typer
@@ -36,6 +37,21 @@ def _get_registry() -> SourceRegistry:
     return SourceRegistry(Path.home() / ".btwin" / "sources.yaml")
 
 
+def _is_valid_cron_schedule(value: str) -> bool:
+    parts = value.strip().split()
+    if len(parts) != 5:
+        return False
+    token_pattern = re.compile(r"^[0-9*/,\-]+$")
+    return all(bool(token_pattern.match(part)) for part in parts)
+
+
+def _atomic_write_yaml(path: Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
+    tmp_path.replace(path)
+
+
 @app.command()
 def setup():
     """Interactive setup — configure API key and preferences."""
@@ -60,8 +76,7 @@ def setup():
         "data_dir": str(Path.home() / ".btwin"),
     }
 
-    with open(config_path, "w") as f:
-        yaml.dump(config_data, f, default_flow_style=False)
+    _atomic_write_yaml(config_path, config_data)
 
     console.print(f"\n[green]Config saved to {config_path}[/green]")
 
@@ -241,26 +256,34 @@ def promotion_schedule(
 ):
     """Show or update promotion batch schedule."""
     config_path = _config_path()
-    config = _get_config()
 
     if set_value is None:
+        config = _get_config()
         console.print(f"Promotion schedule: [bold]{config.promotion.schedule}[/bold]")
         console.print(f"Enabled: {'yes' if config.promotion.enabled else 'no'}")
         return
 
-    data: dict[str, object]
-    if config_path.exists():
-        data = yaml.safe_load(config_path.read_text()) or {}
-    else:
-        data = {}
+    if not _is_valid_cron_schedule(set_value):
+        raise typer.BadParameter("Invalid cron format. Expected 5 fields, e.g. '0 9,21 * * *'")
 
-    promotion_cfg = dict(data.get("promotion", {}))
+    raw: object = {}
+    if config_path.exists():
+        raw = yaml.safe_load(config_path.read_text()) or {}
+
+    data: dict[str, object] = raw if isinstance(raw, dict) else {}
+
+    promotion_raw = data.get("promotion", {})
+    promotion_cfg: dict[str, object]
+    if isinstance(promotion_raw, dict):
+        promotion_cfg = dict(promotion_raw)
+    else:
+        promotion_cfg = {}
+
     promotion_cfg["enabled"] = bool(promotion_cfg.get("enabled", True))
     promotion_cfg["schedule"] = set_value
     data["promotion"] = promotion_cfg
 
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
+    _atomic_write_yaml(config_path, data)
     console.print(f"[green]Promotion schedule updated:[/green] {set_value}")
 
 
