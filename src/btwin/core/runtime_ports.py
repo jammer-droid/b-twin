@@ -1,30 +1,72 @@
-"""Runtime integration ports (contracts only)."""
+"""Runtime integration ports (contracts only).
+
+These protocol contracts mirror docs/plans/2026-03-05-runtime-modes-and-core-ports.md
+for Recall/Identity/Approval/Audit core ports.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Literal, Protocol
+
+
+ApprovalState = Literal["PENDING", "APPROVED", "REJECTED", "EXPIRED"]
 
 
 @dataclass(slots=True)
 class RecallQuery:
     query: str
+    scope: str = "default"
     limit: int = 5
-    tags: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
-class RecallRecord:
+class RecallResult:
     record_id: str
     summary: str
-    score: float | None = None
+    source: str
+    confidence: float
+    version: int
     metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
-class ApprovalDecision:
-    approved: bool
+class MemoryEntry:
+    content: str
+    doc_version: int
+
+
+@dataclass(slots=True)
+class MemoryRef:
+    record_id: str
+    doc_version: int
+
+
+@dataclass(slots=True)
+class Subject:
+    subject_id: str
+    roles: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class AuthorizationDecision:
+    allowed: bool
+    policy_id: str
+    decision_reason: str
+    ttl: int
+
+
+@dataclass(slots=True)
+class ApprovalTicket:
+    ticket_id: str
+    status: ApprovalState = "PENDING"
+
+
+@dataclass(slots=True)
+class ApprovalStatus:
+    ticket_id: str
+    status: ApprovalState
     approver: str | None = None
     reason: str | None = None
 
@@ -33,21 +75,55 @@ class ApprovalDecision:
 class AuditEvent:
     event_type: str
     actor: str
+    trace_id: str
+    doc_version: int
+    checksum: str
     payload: dict[str, object] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
+@dataclass(slots=True)
+class VerificationReport:
+    ok: bool
+    failed_ranges: list[str] = field(default_factory=list)
+
+
 class RecallPort(Protocol):
-    def search(self, query: RecallQuery) -> list[RecallRecord]: ...
+    def recall(self, query: RecallQuery) -> list[RecallResult]: ...
+
+    def remember(
+        self,
+        entry: MemoryEntry,
+        tags: list[str] | None = None,
+        source: str | None = None,
+        timestamp: datetime | None = None,
+    ) -> MemoryRef: ...
 
 
 class IdentityPort(Protocol):
-    def current_actor(self) -> str: ...
+    def resolve_subject(self, subject_hint: str) -> Subject: ...
+
+    def authorize(self, subject: Subject, action: str, resource: str) -> AuthorizationDecision: ...
 
 
 class ApprovalPort(Protocol):
-    def request(self, action: str, actor: str, details: dict[str, object] | None = None) -> ApprovalDecision: ...
+    def request_approval(self, action: str, risk_level: str, context: dict[str, object]) -> ApprovalTicket: ...
+
+    def get_approval(self, ticket_id: str) -> ApprovalStatus: ...
+
+    def record_approval_decision(self, ticket_id: str, approver: str, decision: ApprovalState, reason: str) -> None: ...
 
 
 class AuditPort(Protocol):
-    def log(self, event: AuditEvent) -> None: ...
+    def append(self, event: AuditEvent) -> None: ...
+
+    def query(
+        self,
+        *,
+        trace_id: str | None = None,
+        actor: str | None = None,
+        event_type: str | None = None,
+        time_range: tuple[datetime, datetime] | None = None,
+    ) -> list[AuditEvent]: ...
+
+    def verify_integrity(self, range_name: str) -> VerificationReport: ...
