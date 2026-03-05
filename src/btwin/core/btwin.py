@@ -213,7 +213,7 @@ class BTwin:
         }
 
     def _index_file(self, path: Path, *, record_type: RecordType) -> None:
-        """Mark file for indexing and perform best-effort refresh."""
+        """Mark file for indexing and perform best-effort targeted indexing."""
         rel = path.relative_to(self.config.data_dir).as_posix()
         checksum = self._checksum(path)
         self.indexer.mark_pending(
@@ -222,7 +222,9 @@ class BTwin:
             record_type=record_type,
             checksum=checksum,
         )
-        self.indexer.refresh(limit=1)
+        result = self.indexer.repair(rel)
+        if not result.get("ok"):
+            logger.warning("Failed to index document %s: %s", rel, result)
 
     @staticmethod
     def _checksum(path: Path) -> str:

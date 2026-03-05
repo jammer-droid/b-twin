@@ -145,6 +145,26 @@ def test_record_marks_index_pending_and_refreshes(tmp_path):
     assert out["path"]
 
 
+def test_record_indexes_target_doc_even_with_pending_backlog(tmp_path):
+    twin, _ = make_btwin(tmp_path)
+
+    pending = twin.storage.save_convo_record(content="backlog", requested_by_user=True)
+    pending_path = twin.storage.convo_entries_dir / pending.date / f"{pending.slug}.md"
+    pending_rel = pending_path.relative_to(tmp_path).as_posix()
+    twin.indexer.mark_pending(
+        doc_id=pending_rel,
+        path=pending_rel,
+        record_type="convo",
+        checksum=twin._checksum(pending_path),
+    )
+
+    out = twin.record("latest", topic="fresh")
+    new_rel = Path(out["path"]).relative_to(tmp_path).as_posix()
+
+    assert twin.vector_store.has(new_rel) is True
+    assert twin.indexer.manifest.get(new_rel).status == "indexed"
+
+
 def test_record_convo(tmp_path):
     twin, _ = make_btwin(tmp_path)
     result = twin.record_convo("기억해줘", requested_by_user=True, topic="memory")
