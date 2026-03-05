@@ -17,8 +17,10 @@ app = typer.Typer(
 )
 sources_app = typer.Typer(help="Manage B-TWIN data sources for dashboard workflows.")
 promotion_app = typer.Typer(help="Manage promotion queue operations.")
+indexer_app = typer.Typer(help="Manage core indexer workflows.")
 app.add_typer(sources_app, name="sources")
 app.add_typer(promotion_app, name="promotion")
+app.add_typer(indexer_app, name="indexer")
 
 console = Console(soft_wrap=True)
 
@@ -305,6 +307,67 @@ def promotion_run(limit: int | None = typer.Option(None, min=1, help="Max approv
         f"processed={result['processed']} promoted={result['promoted']} "
         f"skipped={result['skipped']} errors={result['errors']}"
     )
+
+
+@indexer_app.command("status")
+def indexer_status():
+    """Show indexer manifest status summary."""
+    from btwin.core.indexer import CoreIndexer
+
+    config = _get_config()
+    idx = CoreIndexer(data_dir=config.data_dir)
+    summary = idx.status_summary()
+    console.print(
+        "Indexer status "
+        f"total={summary.get('total', 0)} "
+        f"indexed={summary.get('indexed', 0)} "
+        f"pending={summary.get('pending', 0)} "
+        f"stale={summary.get('stale', 0)} "
+        f"failed={summary.get('failed', 0)} "
+        f"deleted={summary.get('deleted', 0)}"
+    )
+
+
+@indexer_app.command("refresh")
+def indexer_refresh(limit: int | None = typer.Option(None, min=1, help="Max docs to process in this run")):
+    """Refresh pending/stale/failed/deleted docs into vector index."""
+    from btwin.core.indexer import CoreIndexer
+
+    config = _get_config()
+    idx = CoreIndexer(data_dir=config.data_dir)
+    result = idx.refresh(limit=limit)
+    console.print(
+        "Indexer refresh "
+        f"processed={result['processed']} indexed={result['indexed']} "
+        f"deleted={result['deleted']} failed={result['failed']}"
+    )
+
+
+@indexer_app.command("reconcile")
+def indexer_reconcile():
+    """Reconcile file system docs with manifest and refresh index."""
+    from btwin.core.indexer import CoreIndexer
+
+    config = _get_config()
+    idx = CoreIndexer(data_dir=config.data_dir)
+    result = idx.reconcile()
+    console.print(
+        "Indexer reconcile "
+        f"processed={result['processed']} indexed={result['indexed']} "
+        f"deleted={result['deleted']} failed={result['failed']}"
+    )
+
+
+@indexer_app.command("repair")
+def indexer_repair(doc_id: str = typer.Option(..., "--doc-id", help="Document id to repair")):
+    """Repair a single manifest doc id by re-indexing source content."""
+    from btwin.core.indexer import CoreIndexer
+
+    config = _get_config()
+    idx = CoreIndexer(data_dir=config.data_dir)
+    result = idx.repair(doc_id)
+    status = "ok" if result.get("ok") else "failed"
+    console.print(f"Indexer repair {status} doc_id={doc_id} status={result.get('status')}")
 
 
 if __name__ == "__main__":

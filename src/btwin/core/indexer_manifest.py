@@ -1,0 +1,103 @@
+"""YAML-backed index manifest store."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+from btwin.core.indexer_models import IndexEntry, IndexStatus, RecordType
+
+
+class IndexManifest:
+    def __init__(self, manifest_path: Path) -> None:
+        self.manifest_path = manifest_path
+        self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        self._entries: dict[str, IndexEntry] = self._load_entries()
+
+    def get(self, doc_id: str) -> IndexEntry | None:
+        entry = self._entries.get(doc_id)
+        if entry is None:
+            return None
+        return entry.model_copy(deep=True)
+
+    def upsert(
+        self,
+        *,
+        doc_id: str,
+        path: str,
+        record_type: RecordType,
+        checksum: str,
+        status: IndexStatus,
+        doc_version: int | None = None,
+        error: str | None = None,
+    ) -> IndexEntry:
+        existing = self._entries.get(doc_id)
+
+        if doc_version is None:
+            if existing is None:
+                resolved_version = 1
+            elif existing.checksum != checksum:
+                resolved_version = existing.doc_version + 1
+            else:
+                resolved_version = existing.doc_version
+        else:
+            resolved_version = doc_version
+
+        entry = IndexEntry(
+            doc_id=doc_id,
+            path=path,
+            record_type=record_type,
+            checksum=checksum,
+            status=status,
+            doc_version=resolved_version,
+            error=error,
+        )
+        self._entries[doc_id] = entry
+        self._save_entries()
+        return entry.model_copy(deep=True)
+
+    def mark_status(self, doc_id: str, status: IndexStatus, error: str | None = None) -> IndexEntry:
+        entry = self._entries[doc_id]
+        updated = entry.model_copy(update={"status": status, "error": error})
+        self._entries[doc_id] = updated
+        self._save_entries()
+        return updated.model_copy(deep=True)
+
+    def list_by_status(self, status: IndexStatus) -> list[IndexEntry]:
+        return [item.model_copy(deep=True) for item in self._entries.values() if item.status == status]
+
+    def summary(self) -> dict[str, int]:
+        counts: dict[str, int] = {
+            "total": len(self._entries),
+            "pending": 0,
+            "indexed": 0,
+            "stale": 0,
+            "failed": 0,
+            "deleted": 0,
+        }
+        for item in self._entries.values():
+            counts[item.status] = counts.get(item.status, 0) + 1
+        return counts
+
+    def _load_entries(self) -> dict[str, IndexEntry]:
+        if not self.manifest_path.exists():
+            return {}
+
+        raw = yaml.safe_load(self.manifest_path.read_text()) or []
+        if not isinstance(raw, list):
+            raise ValueError("index manifest file must contain a list")
+
+        items = [IndexEntry.model_validate(row) for row in raw]
+        return {item.doc_id: item for item in items}
+
+    def _save_entries(self) -> None:
+        payload = yaml.dump(
+            [item.model_dump(mode="json") for item in self._entries.values()],
+            allow_unicode=True,
+            sort_keys=False,
+        )
+
+        tmp_path = self.manifest_path.with_suffix(self.manifest_path.suffix + ".tmp")
+        tmp_path.write_text(payload)
+        tmp_path.replace(self.manifest_path)
