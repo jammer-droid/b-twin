@@ -37,11 +37,15 @@ class PromotionWorker:
     def run_once(self, limit: int | None = None) -> dict[str, int]:
         result = PromotionBatchResult()
 
-        approved_items = self.promotion_store.list_items(status="approved")
+        # Include both "approved" and "queued" items so that orphaned queued
+        # items (from a previous run that failed mid-save) are retried.
+        pending_items = self.promotion_store.list_items(
+            status="approved"
+        ) + self.promotion_store.list_items(status="queued")
         if limit is not None:
-            approved_items = approved_items[:limit]
+            pending_items = pending_items[:limit]
 
-        for item in approved_items:
+        for item in pending_items:
             result.processed += 1
 
             source_doc = self.storage.read_collab_record_document(item.source_record_id)
@@ -57,11 +61,13 @@ class PromotionWorker:
                     result.errors += 1
                 continue
 
-            try:
-                self.promotion_store.set_status(item.item_id, "queued", actor="main")
-            except (PromotionTransitionError, PromotionItemNotFoundError, PromotionActorRequiredError):
-                result.errors += 1
-                continue
+            # Only transition approved -> queued; already-queued items skip this step.
+            if item.status == "approved":
+                try:
+                    self.promotion_store.set_status(item.item_id, "queued", actor="main")
+                except (PromotionTransitionError, PromotionItemNotFoundError, PromotionActorRequiredError):
+                    result.errors += 1
+                    continue
 
             self.storage.save_promoted_entry(
                 item_id=item.item_id,

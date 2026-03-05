@@ -61,6 +61,33 @@ def test_worker_is_idempotent_on_rerun(tmp_path: Path):
     assert storage.count_promoted_entries() == 1
 
 
+def test_worker_recovers_orphaned_queued_item(tmp_path: Path):
+    """A queued item (from a previous run that failed mid-save) is retried."""
+    storage = Storage(tmp_path)
+    promotion_store = PromotionStore(tmp_path / "promotion_queue.yaml")
+
+    source = _collab_record()
+    storage.save_collab_record(source)
+
+    # Simulate a previous run that transitioned the item to "queued" but
+    # crashed before save_promoted_entry completed (orphaned queued item).
+    item = promotion_store.enqueue(source_record_id=source.record_id, proposed_by="codex-code")
+    promotion_store.set_status(item.item_id, "approved", actor="main")
+    promotion_store.set_status(item.item_id, "queued", actor="main")
+
+    # The promoted entry does NOT exist — the previous run failed mid-save.
+    assert not storage.promoted_entry_exists(item.item_id)
+
+    worker = PromotionWorker(storage=storage, promotion_store=promotion_store)
+    result = worker.run_once()
+
+    assert result["promoted"] == 1
+    assert result["errors"] == 0
+    refreshed = promotion_store.list_items(status="promoted")
+    assert len(refreshed) == 1
+    assert storage.promoted_entry_exists(item.item_id)
+
+
 def test_worker_skips_missing_source_record(tmp_path: Path):
     storage = Storage(tmp_path)
     promotion_store = PromotionStore(tmp_path / "promotion_queue.yaml")
