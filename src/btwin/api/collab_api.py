@@ -121,6 +121,13 @@ def create_collab_app(
             },
         )
 
+    def _require_admin_token_if_configured(x_admin_token: str | None) -> JSONResponse | None:
+        if not admin_token:
+            return None
+        if x_admin_token == admin_token:
+            return None
+        return _error(403, "FORBIDDEN", "admin token is required")
+
     def _payload_hash(payload: dict[str, object]) -> str:
         normalized = json.dumps(payload, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -611,7 +618,11 @@ def create_collab_app(
         return _entries_ui_html()
 
     @app.get("/api/entries")
-    def list_entries(recordType: str | None = None):
+    def list_entries(recordType: str | None = None, x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        auth_error = _require_admin_token_if_configured(x_admin_token)
+        if auth_error is not None:
+            return auth_error
+
         items: list[dict[str, object]] = []
 
         if recordType in (None, "all", "entry"):
@@ -799,6 +810,17 @@ def create_collab_app(
             return _error(409, decision.error_code or "GATE_REJECTED", decision.message, decision.details)
 
         if decision.idempotent:
+            _audit(
+                "gate_handoff_succeeded",
+                {
+                    "recordId": record.record_id,
+                    "actorAgent": actor,
+                    "fromStatus": record.status,
+                    "toStatus": record.status,
+                    "version": record.version,
+                    "idempotent": True,
+                },
+            )
             return {
                 "recordId": record.record_id,
                 "status": record.status,
@@ -815,6 +837,17 @@ def create_collab_app(
         if updated is None:
             return _error(404, "RECORD_NOT_FOUND", "collab record not found", {"recordId": payload.record_id})
 
+        _audit(
+            "gate_handoff_succeeded",
+            {
+                "recordId": updated.record_id,
+                "actorAgent": actor,
+                "fromStatus": record.status,
+                "toStatus": updated.status,
+                "version": updated.version,
+                "idempotent": False,
+            },
+        )
         return {
             "recordId": updated.record_id,
             "status": updated.status,
@@ -857,6 +890,17 @@ def create_collab_app(
             return _error(409, decision.error_code or "GATE_REJECTED", decision.message, decision.details)
 
         if decision.idempotent:
+            _audit(
+                "gate_complete_succeeded",
+                {
+                    "recordId": record.record_id,
+                    "actorAgent": actor,
+                    "fromStatus": record.status,
+                    "toStatus": record.status,
+                    "version": record.version,
+                    "idempotent": True,
+                },
+            )
             return {
                 "recordId": record.record_id,
                 "status": record.status,
@@ -868,6 +912,17 @@ def create_collab_app(
         if updated is None:
             return _error(404, "RECORD_NOT_FOUND", "collab record not found", {"recordId": payload.record_id})
 
+        _audit(
+            "gate_complete_succeeded",
+            {
+                "recordId": updated.record_id,
+                "actorAgent": actor,
+                "fromStatus": record.status,
+                "toStatus": updated.status,
+                "version": updated.version,
+                "idempotent": False,
+            },
+        )
         return {
             "recordId": updated.record_id,
             "status": updated.status,
@@ -1005,7 +1060,10 @@ def create_collab_app(
         return result
 
     @app.get("/api/promotions/history")
-    def promotions_history():
+    def promotions_history(x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        auth_error = _require_admin_token_if_configured(x_admin_token)
+        if auth_error is not None:
+            return auth_error
         return {"items": storage.list_promoted_entries()}
 
     @app.post("/api/admin/agents/reload")

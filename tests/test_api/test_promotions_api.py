@@ -184,7 +184,10 @@ def test_run_batch_promotes_approved_items_and_history(tmp_path: Path):
     assert batch.status_code == 200
     assert batch.json()["promoted"] == 1
 
-    history = client.get("/api/promotions/history")
+    denied_history = client.get("/api/promotions/history")
+    assert denied_history.status_code == 403
+
+    history = client.get("/api/promotions/history", headers={"X-Admin-Token": "secret-token"})
     assert history.status_code == 200
     items = history.json()["items"]
     assert len(items) == 1

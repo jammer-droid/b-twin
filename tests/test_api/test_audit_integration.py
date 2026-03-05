@@ -89,3 +89,45 @@ def test_promotion_actions_write_audit_events(tmp_path: Path):
     assert "promotion_proposed" in events
     assert "promotion_approved" in events
     assert "promotion_batch_run" in events
+
+
+def test_gate_success_writes_audit_events(tmp_path: Path):
+    client = _client(tmp_path)
+    created = client.post(
+        "/api/collab/records",
+        json={
+            "taskId": "jeonse-e2e-002",
+            "recordType": "collab",
+            "summary": "handoff/complete",
+            "evidence": ["ok"],
+            "nextAction": ["done"],
+            "status": "draft",
+            "authorAgent": "research-bot",
+            "createdAt": "2026-03-05T15:54:00+09:00",
+        },
+    ).json()
+
+    client.post(
+        "/api/collab/handoff",
+        json={
+            "recordId": created["recordId"],
+            "expectedVersion": 1,
+            "fromAgent": "research-bot",
+            "toAgent": "codex-code",
+        },
+        headers={"X-Actor-Agent": "research-bot"},
+    )
+
+    client.post(
+        "/api/collab/complete",
+        json={
+            "recordId": created["recordId"],
+            "expectedVersion": 2,
+            "actorAgent": "codex-code",
+        },
+        headers={"X-Actor-Agent": "codex-code"},
+    )
+
+    events = [json.loads(line)["eventType"] for line in (tmp_path / "audit.log.jsonl").read_text().splitlines()]
+    assert "gate_handoff_succeeded" in events
+    assert "gate_complete_succeeded" in events

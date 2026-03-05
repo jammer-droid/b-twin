@@ -13,9 +13,11 @@ def test_explicit_convo_record_saves_under_convo_dir(mock_get_twin, mock_get_aud
         "path": "/tmp/.btwin/entries/convo/2026-03-05/convo-123.md",
     }
     mock_get_twin.return_value = mock
-    mock_get_audit_logger.return_value = MagicMock()
+    audit_mock = MagicMock()
+    mock_get_audit_logger.return_value = audit_mock
 
     result = btwin_convo_record(content="기억해줘", requested_by_user=True)
 
     mock.record_convo.assert_called_once_with("기억해줘", requested_by_user=True)
+    audit_mock.log.assert_called_once()
     assert "entries/convo" in result

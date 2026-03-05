@@ -7,10 +7,11 @@ from btwin.core.models import Entry
 from btwin.core.storage import Storage
 
 
-def _client(tmp_path: Path) -> TestClient:
+def _client(tmp_path: Path, admin_token: str | None = None) -> TestClient:
     app = create_collab_app(
         data_dir=tmp_path,
         initial_agents={"main", "codex-code", "research-bot"},
+        admin_token=admin_token,
     )
     return TestClient(app)
 
@@ -56,3 +57,18 @@ def test_entries_api_filters_by_record_type(tmp_path: Path):
     convo_items = client.get("/api/entries?recordType=convo").json()["items"]
     assert len(convo_items) == 1
     assert convo_items[0]["recordType"] == "convo"
+
+
+def test_entries_api_requires_admin_token_when_configured(tmp_path: Path):
+    storage = Storage(tmp_path)
+    storage.save_convo_record(content="convo memo", requested_by_user=True)
+
+    client = _client(tmp_path, admin_token="secret-token")
+
+    denied = client.get("/api/entries")
+    assert denied.status_code == 403
+    assert denied.json()["errorCode"] == "FORBIDDEN"
+
+    allowed = client.get("/api/entries", headers={"X-Admin-Token": "secret-token"})
+    assert allowed.status_code == 200
+    assert len(allowed.json()["items"]) >= 1

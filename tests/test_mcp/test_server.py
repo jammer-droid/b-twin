@@ -117,11 +117,13 @@ def test_btwin_record(mock_get_twin):
 def test_btwin_convo_record(mock_get_twin, mock_get_audit_logger):
     mock = _mock_twin()
     mock_get_twin.return_value = mock
-    mock_get_audit_logger.return_value = MagicMock()
+    audit_mock = MagicMock()
+    mock_get_audit_logger.return_value = audit_mock
 
     result = btwin_convo_record("기억해줘", requested_by_user=True)
 
     mock.record_convo.assert_called_once_with("기억해줘", requested_by_user=True)
+    audit_mock.log.assert_called_once()
     assert "entries/convo" in result
 
 
