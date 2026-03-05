@@ -6,6 +6,22 @@ Branch: `feature/vs3-vs5`
 
 ---
 
+## Update (VS6 통합 완료)
+
+본 문서는 원래 VS3~VS5 진행 보고서였고, 이후 VS6가 `main`에 통합되었습니다.
+
+- VS6 통합 커밋: `80a8595` (`merge: integrate VS6 core indexer into main`)
+- VS6 핵심 반영:
+  - Core indexer (`refresh/reconcile/repair`)
+  - index manifest + status model (`pending/indexed/stale/failed/deleted`)
+  - BTwin write path indexer 연동
+  - CLI/API indexer 운영 명령 추가
+  - document contracts 1차 검증 추가
+- 통합 이후 전체 테스트:
+  - `uv run --python 3.13 pytest -q` → **200 passed, 5 skipped**
+
+상세 운영 가이드는 `docs/indexer-operations.md` 참고.
+
 ## 1) 요약
 
 VS3~VS5를 subagent-driven-development 방식(작은 청크 + 테스트 + 리뷰)으로 진행했고,

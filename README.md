@@ -17,6 +17,10 @@ B-TWIN Core Library
     |
 Data Layer
     +-- ~/.btwin/entries/{date}/{slug}.md
+    +-- ~/.btwin/entries/convo/{date}/{slug}.md
+    +-- ~/.btwin/entries/collab/{date}/*.md
+    +-- ~/.btwin/entries/global/promoted/*.md
+    +-- ~/.btwin/index_manifest.yaml
     +-- ~/.btwin/index/ (ChromaDB)
     +-- ~/.btwin/summary.md (cumulative)
 ```
@@ -86,6 +90,28 @@ B-TWIN resolves the data directory with the following precedence:
 2. Per-project `.btwin/` directory (if it exists in CWD)
 3. Global `~/.btwin/` (default)
 
+## Indexer Operations (VS6)
+
+Core indexer CLI commands:
+
+```bash
+btwin indexer status
+btwin indexer refresh --limit 100
+btwin indexer reconcile
+btwin indexer repair --doc-id <doc-id>
+```
+
+HTTP admin endpoints:
+
+- `GET /api/indexer/status`
+- `POST /api/indexer/refresh`
+- `POST /api/indexer/reconcile`
+- `POST /api/indexer/repair`
+
+> These endpoints require admin token scope (`X-Admin-Token`) and main admin actor (`actorAgent: main`).
+
+Detailed runbook: `docs/indexer-operations.md`
+
 ## Entry Format
 
 Entries are stored as markdown files with YAML frontmatter:
@@ -120,7 +146,7 @@ Your content here...
 uv sync
 
 # Run tests
-uv run pytest -v
+uv run --python 3.13 pytest -q
 
 # Start MCP server manually
 uv run btwin serve
