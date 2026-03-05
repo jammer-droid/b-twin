@@ -51,6 +51,14 @@ class CollabRecord(BaseModel):
     created_at: datetime = Field(alias="createdAt")
     version: int = Field(ge=1)
 
+    @field_validator("task_id", "summary", "author_agent")
+    @classmethod
+    def _non_empty_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("text fields must not be empty")
+        return cleaned
+
     @field_validator("evidence", "next_action")
     @classmethod
     def _non_empty_items(cls, value: list[str]) -> list[str]:

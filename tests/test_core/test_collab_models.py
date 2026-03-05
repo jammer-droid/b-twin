@@ -104,6 +104,40 @@ def test_collab_record_rejects_naive_created_at() -> None:
         CollabRecord.model_validate(payload)
 
 
+@pytest.mark.parametrize("field_name", ["taskId", "summary", "authorAgent"])
+def test_collab_record_rejects_blank_text_fields(field_name: str) -> None:
+    payload = _valid_payload()
+    payload[field_name] = "   "
+
+    with pytest.raises(ValidationError):
+        CollabRecord.model_validate(payload)
+
+
+def test_collab_record_strips_text_and_list_items() -> None:
+    payload = _valid_payload()
+    payload["taskId"] = "  jeonse-e2e-001  "
+    payload["summary"] = "  요약  "
+    payload["authorAgent"] = "  codex-code  "
+    payload["evidence"] = ["  proof  "]
+    payload["nextAction"] = ["  next  "]
+
+    record = CollabRecord.model_validate(payload)
+
+    assert record.task_id == "jeonse-e2e-001"
+    assert record.summary == "요약"
+    assert record.author_agent == "codex-code"
+    assert record.evidence == ["proof"]
+    assert record.next_action == ["next"]
+
+
+def test_collab_record_rejects_blank_next_action_item() -> None:
+    payload = _valid_payload()
+    payload["nextAction"] = ["   "]
+
+    with pytest.raises(ValidationError):
+        CollabRecord.model_validate(payload)
+
+
 def test_generate_record_id_returns_prefixed_ulid_shape() -> None:
     record_id = generate_record_id()
 
