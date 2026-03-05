@@ -14,6 +14,7 @@ class Storage:
         self.data_dir = data_dir
         self.entries_dir = data_dir / "entries"
         self.collab_entries_dir = self.entries_dir / "collab"
+        self.promoted_entries_dir = self.entries_dir / "global"
 
     def save_entry(self, entry: Entry) -> Path:
         """Save an entry. If same date/slug exists, merge content and tags."""
@@ -156,6 +157,35 @@ class Storage:
                 continue
             records.append(loaded[0])
         return records
+
+    def save_promoted_entry(self, *, item_id: str, source_record_id: str, content: str) -> Path:
+        """Save promoted global entry for a promotion item."""
+        date_dir = self.promoted_entries_dir / "promoted"
+        date_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = date_dir / f"{item_id}.md"
+        frontmatter = yaml.dump(
+            {
+                "promotionItemId": item_id,
+                "sourceRecordId": source_record_id,
+                "scope": "global",
+            },
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        ).strip()
+        file_path.write_text(f"---\n{frontmatter}\n---\n\n{content}\n")
+        return file_path
+
+    def promoted_entry_exists(self, item_id: str) -> bool:
+        file_path = self.promoted_entries_dir / "promoted" / f"{item_id}.md"
+        return file_path.exists()
+
+    def count_promoted_entries(self) -> int:
+        promoted_dir = self.promoted_entries_dir / "promoted"
+        if not promoted_dir.exists():
+            return 0
+        return len(list(promoted_dir.glob("*.md")))
 
     def _find_collab_file(self, record_id: str) -> tuple[CollabRecord, Path, str] | None:
         for file_path in self._iter_collab_files():
