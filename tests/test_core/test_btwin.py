@@ -203,3 +203,34 @@ def test_chat_with_llm(tmp_path):
     response = twin.chat("Hello")
     assert response == "Hello! Nice to meet you."
     assert twin.session_manager.has_active_session()
+
+
+# --- import_entry ---
+
+def test_import_entry(tmp_path):
+    twin, _ = make_btwin(tmp_path)
+    result = twin.import_entry(
+        content="# EA Report\n\nAnalysis.",
+        date="2026-02-24",
+        slug="ea-report",
+        tags=["jobs", "ea-korea"],
+        source_path="/fake/report.md",
+    )
+    assert result["date"] == "2026-02-24"
+    assert result["slug"] == "ea-report"
+    entries = twin.storage.list_entries()
+    assert len(entries) == 1
+    assert entries[0].metadata["tags"] == ["jobs", "ea-korea"]
+    assert entries[0].metadata["source_path"] == "/fake/report.md"
+    assert twin.vector_store.count() == 1
+
+
+def test_import_entry_minimal(tmp_path):
+    twin, _ = make_btwin(tmp_path)
+    result = twin.import_entry(
+        content="Just a note.",
+        date="2026-02-24",
+        slug="note",
+    )
+    assert result["date"] == "2026-02-24"
+    assert result["slug"] == "note"

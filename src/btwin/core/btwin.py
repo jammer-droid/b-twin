@@ -158,6 +158,48 @@ class BTwin:
             logger.warning("Failed to update summary.md", exc_info=True)
         return {"date": date, "slug": slug, "path": str(saved_path)}
 
+    def import_entry(
+        self,
+        content: str,
+        date: str,
+        slug: str,
+        tags: list[str] | None = None,
+        source_path: str | None = None,
+    ) -> dict:
+        """Import a single entry with explicit date, slug, and tags."""
+        metadata: dict[str, object] = {}
+        if tags:
+            metadata["tags"] = tags
+        if source_path:
+            metadata["source_path"] = source_path
+        metadata["imported_at"] = datetime.now(timezone.utc).isoformat()
+
+        entry = Entry(
+            date=date,
+            slug=slug,
+            content=content,
+            metadata=metadata,
+        )
+        self.storage.save_entry(entry)
+
+        doc_id = f"{date}/{slug}"
+        self.vector_store.add(
+            doc_id=doc_id,
+            content=content,
+            metadata={"date": date, "slug": slug},
+        )
+
+        try:
+            self._update_summary(date, slug, content)
+        except Exception:
+            logger.warning("Failed to update summary for %s/%s", date, slug)
+
+        return {
+            "date": date,
+            "slug": slug,
+            "path": str(self.storage.entries_dir / date / f"{slug}.md"),
+        }
+
     def session_status(self) -> dict:
         """Get the current session status."""
         session = self.session_manager.current_session

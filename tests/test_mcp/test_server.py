@@ -9,6 +9,7 @@ from btwin.mcp.server import (
     btwin_search,
     btwin_record,
     btwin_session_status,
+    btwin_import_entry,
     read_entry,
 )
 
@@ -135,3 +136,56 @@ def test_read_entry_not_found(mock_get_twin):
     mock_get_twin.return_value = mock
     result = read_entry("2026-03-02", "nonexistent")
     assert "not found" in result.lower()
+
+
+# --- btwin_import_entry ---
+
+@patch("btwin.mcp.server._get_twin")
+def test_btwin_import_entry(mock_get_twin):
+    mock = _mock_twin()
+    mock.import_entry.return_value = {
+        "date": "2026-02-24",
+        "slug": "ea-report",
+        "path": "/tmp/entries/2026-02-24/ea-report.md",
+    }
+    mock_get_twin.return_value = mock
+    result = btwin_import_entry(
+        content="# EA Report\n\nAnalysis.",
+        date="2026-02-24",
+        slug="ea-report",
+        tags="jobs,ea-korea",
+        source_path="/fake/report.md",
+    )
+    mock.import_entry.assert_called_once_with(
+        content="# EA Report\n\nAnalysis.",
+        date="2026-02-24",
+        slug="ea-report",
+        tags=["jobs", "ea-korea"],
+        source_path="/fake/report.md",
+    )
+    assert "2026-02-24" in result
+    assert "ea-report" in result
+
+
+@patch("btwin.mcp.server._get_twin")
+def test_btwin_import_entry_no_tags(mock_get_twin):
+    mock = _mock_twin()
+    mock.import_entry.return_value = {
+        "date": "2026-02-24",
+        "slug": "note",
+        "path": "/tmp/entries/2026-02-24/note.md",
+    }
+    mock_get_twin.return_value = mock
+    result = btwin_import_entry(
+        content="Just a note.",
+        date="2026-02-24",
+        slug="note",
+    )
+    mock.import_entry.assert_called_once_with(
+        content="Just a note.",
+        date="2026-02-24",
+        slug="note",
+        tags=None,
+        source_path=None,
+    )
+    assert "Imported" in result

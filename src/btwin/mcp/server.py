@@ -110,6 +110,38 @@ def btwin_record(content: str, topic: str | None = None) -> str:
 
 
 @mcp.tool()
+def btwin_import_entry(
+    content: str,
+    date: str,
+    slug: str,
+    tags: str | None = None,
+    source_path: str | None = None,
+) -> str:
+    """Import a single entry with explicit date, slug, and tags.
+
+    Use this when importing entries from external sources where you need
+    to specify the exact date, slug, and tags instead of auto-generating them.
+
+    Args:
+        content: The markdown content of the entry
+        date: Date in YYYY-MM-DD format (e.g., "2026-02-24")
+        slug: Filename slug (e.g., "ea-interview-review")
+        tags: Comma-separated tags (e.g., "jobs,ea-korea,interview")
+        source_path: Original file path for dedup tracking
+    """
+    twin = _get_twin()
+    tag_list = [t.strip() for t in tags.split(",")] if tags else None
+    result = twin.import_entry(
+        content=content,
+        date=date,
+        slug=slug,
+        tags=tag_list,
+        source_path=source_path,
+    )
+    return f"Imported: {result['date']}/{result['slug']} → {result['path']}"
+
+
+@mcp.tool()
 def btwin_session_status() -> str:
     """Check the current session status.
 
