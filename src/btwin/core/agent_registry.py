@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_OPENCLAW_CONFIG = Path.home() / ".openclaw" / "openclaw.json"
@@ -49,10 +52,13 @@ class AgentRegistry:
         loaded_agents.update(self.extra_agents)
 
         if path.exists():
-            data = json.loads(path.read_text())
-            configured = data.get("agents", {})
-            if isinstance(configured, dict):
-                loaded_agents.update(configured.keys())
+            try:
+                data = json.loads(path.read_text())
+                configured = data.get("agents", {})
+                if isinstance(configured, dict):
+                    loaded_agents.update(configured.keys())
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning("Failed to load agent config from %s: %s", path, exc)
 
         self._agents = loaded_agents
         return {

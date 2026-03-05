@@ -254,7 +254,8 @@ class BTwin:
             updated = date_header.join(parts)
         else:
             # Add new date section after the title
-            header_end = existing.index("\n") + 1
+            nl_pos = existing.find("\n")
+            header_end = nl_pos + 1 if nl_pos != -1 else len(existing)
             date_section = f"\n{date_header}\n\n{new_line}\n\n---\n"
             updated = existing[:header_end] + date_section + existing[header_end:]
 

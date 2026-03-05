@@ -1,3 +1,5 @@
+import pytest
+
 from btwin.core.indexer_manifest import IndexManifest
 
 
@@ -57,3 +59,11 @@ def test_manifest_mark_status_and_summary(tmp_path):
     summary = manifest.summary()
     assert summary["total"] == 1
     assert summary["indexed"] == 1
+
+
+def test_manifest_mark_status_nonexistent_doc_id(tmp_path):
+    """mark_status with a nonexistent doc_id should raise ValueError with clear message."""
+    manifest = IndexManifest(tmp_path / "index_manifest.yaml")
+
+    with pytest.raises(ValueError, match="doc_id 'nonexistent' not found in index manifest"):
+        manifest.mark_status("nonexistent", "indexed")

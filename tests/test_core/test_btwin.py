@@ -255,3 +255,20 @@ def test_import_entry_minimal(tmp_path):
     )
     assert result["date"] == "2026-02-24"
     assert result["slug"] == "note"
+
+
+# --- _update_summary edge cases ---
+
+def test_update_summary_no_newline_in_existing(tmp_path):
+    """_update_summary should not crash when summary.md has no newline."""
+    twin, _ = make_btwin(tmp_path)
+    summary_path = tmp_path / "summary.md"
+    # Write a summary file with no trailing newline
+    summary_path.write_text("# B-TWIN Summary")
+
+    twin.record("Note after no-newline summary", topic="edge")
+
+    content = summary_path.read_text()
+    assert "# B-TWIN Summary" in content
+    assert "edge" in content
+    assert "Note after no-newline summary" in content

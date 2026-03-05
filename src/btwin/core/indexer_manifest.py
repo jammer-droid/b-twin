@@ -58,6 +58,8 @@ class IndexManifest:
         return entry.model_copy(deep=True)
 
     def mark_status(self, doc_id: str, status: IndexStatus, error: str | None = None) -> IndexEntry:
+        if doc_id not in self._entries:
+            raise ValueError(f"doc_id '{doc_id}' not found in index manifest")
         entry = self._entries[doc_id]
         updated = entry.model_copy(update={"status": status, "error": error})
         self._entries[doc_id] = updated
