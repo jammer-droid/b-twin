@@ -135,6 +135,16 @@ def test_record_no_collision(tmp_path):
     assert twin.vector_store.count() == 2
 
 
+def test_record_marks_index_pending_and_refreshes(tmp_path):
+    twin, _ = make_btwin(tmp_path)
+
+    out = twin.record("hello", topic="test")
+
+    summary = twin.indexer.status_summary()
+    assert summary.get("indexed", 0) >= 1
+    assert out["path"]
+
+
 def test_record_convo(tmp_path):
     twin, _ = make_btwin(tmp_path)
     result = twin.record_convo("기억해줘", requested_by_user=True, topic="memory")

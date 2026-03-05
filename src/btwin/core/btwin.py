@@ -1,15 +1,16 @@
 """B-TWIN core integration class."""
 
+import hashlib
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 from btwin.config import BTwinConfig
+from btwin.core.indexer import CoreIndexer
+from btwin.core.indexer_models import RecordType
 from btwin.core.llm import LLMClient
 from btwin.core.models import Entry
 from btwin.core.session import SessionManager
-from btwin.core.storage import Storage
-from btwin.core.vector import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,9 @@ logger = logging.getLogger(__name__)
 class BTwin:
     def __init__(self, config: BTwinConfig) -> None:
         self.config = config
-        self.storage = Storage(data_dir=config.data_dir)
-        self.vector_store = VectorStore(persist_dir=config.data_dir / "index")
+        self.indexer = CoreIndexer(data_dir=config.data_dir)
+        self.storage = self.indexer.storage
+        self.vector_store = self.indexer.vector_store
         self.session_manager = SessionManager()
 
         # LLM is optional — only needed for CLI standalone mode
@@ -90,14 +92,8 @@ class BTwin:
                 "created_at": now.isoformat(),
             },
         )
-        self.storage.save_entry(entry)
-
-        doc_id = f"{date}/{slug}"
-        self.vector_store.add(
-            doc_id=doc_id,
-            content=content,
-            metadata={"date": date, "slug": slug, "topic": session.topic or "", "record_type": "entry"},
-        )
+        saved_path = self.storage.save_entry(entry)
+        self._index_file(saved_path, record_type="entry")
 
         try:
             self._update_summary(date, slug, content)
@@ -140,18 +136,7 @@ class BTwin:
             topic=topic,
         )
         path = self.storage.convo_entries_dir / entry.date / f"{entry.slug}.md"
-
-        doc_id = f"{entry.date}/convo/{entry.slug}"
-        self.vector_store.add(
-            doc_id=doc_id,
-            content=content,
-            metadata={
-                "date": entry.date,
-                "slug": entry.slug,
-                "record_type": "convo",
-                "requested_by_user": str(requested_by_user).lower(),
-            },
-        )
+        self._index_file(path, record_type="convo")
 
         return {"date": entry.date, "slug": entry.slug, "path": str(path)}
 
@@ -174,12 +159,7 @@ class BTwin:
         )
         saved_path = self.storage.save_entry(entry)
 
-        doc_id = f"{date}/{slug}"
-        self.vector_store.add(
-            doc_id=doc_id,
-            content=content,
-            metadata={"date": date, "slug": slug, "record_type": "entry"},
-        )
+        self._index_file(saved_path, record_type="entry")
 
         try:
             self._update_summary(date, slug, content)
@@ -211,12 +191,7 @@ class BTwin:
         )
         saved_path = self.storage.save_entry(entry)
 
-        doc_id = f"{date}/{slug}"
-        self.vector_store.add(
-            doc_id=doc_id,
-            content=content,
-            metadata={"date": date, "slug": slug, "record_type": "entry"},
-        )
+        self._index_file(saved_path, record_type="entry")
 
         try:
             self._update_summary(date, slug, content)
@@ -236,6 +211,23 @@ class BTwin:
             "message_count": len(session.messages),
             "created_at": session.created_at.isoformat(),
         }
+
+    def _index_file(self, path: Path, *, record_type: RecordType) -> None:
+        """Mark file for indexing and perform best-effort refresh."""
+        rel = path.relative_to(self.config.data_dir).as_posix()
+        checksum = self._checksum(path)
+        self.indexer.mark_pending(
+            doc_id=rel,
+            path=rel,
+            record_type=record_type,
+            checksum=checksum,
+        )
+        self.indexer.refresh(limit=1)
+
+    @staticmethod
+    def _checksum(path: Path) -> str:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        return f"sha256:{digest}"
 
     def _update_summary(self, date: str, slug: str, content: str) -> None:
         """Append an entry summary to the cumulative summary.md file."""

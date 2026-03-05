@@ -1,5 +1,6 @@
 """Markdown file storage for B-TWIN entries."""
 
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
@@ -260,6 +261,34 @@ class Storage:
 
         return items
 
+    def list_indexable_documents(self) -> list[dict[str, str]]:
+        """Return indexable markdown documents with checksum and inferred record_type."""
+        docs: list[dict[str, str]] = []
+
+        if self.entries_dir.exists():
+            for date_dir in sorted(self.entries_dir.iterdir()):
+                if not date_dir.is_dir():
+                    continue
+                if date_dir.name in {"convo", "collab", "global"}:
+                    continue
+                for md_file in sorted(date_dir.glob("*.md")):
+                    docs.append(self._index_doc_info(md_file, record_type="entry"))
+
+        if self.convo_entries_dir.exists():
+            for md_file in sorted(self.convo_entries_dir.glob("*/*.md")):
+                docs.append(self._index_doc_info(md_file, record_type="convo"))
+
+        if self.collab_entries_dir.exists():
+            for md_file in sorted(self.collab_entries_dir.glob("*/*.md")):
+                docs.append(self._index_doc_info(md_file, record_type="collab"))
+
+        promoted_dir = self.promoted_entries_dir / "promoted"
+        if promoted_dir.exists():
+            for md_file in sorted(promoted_dir.glob("*.md")):
+                docs.append(self._index_doc_info(md_file, record_type="promoted"))
+
+        return docs
+
     def _find_collab_file(self, record_id: str) -> tuple[CollabRecord, Path, str] | None:
         for file_path in self._iter_collab_files():
             loaded = self._load_collab_file(file_path)
@@ -318,3 +347,17 @@ class Storage:
         day = record.created_at.date().isoformat()
         safe_task = record.task_id.replace("/", "-")
         return self.collab_entries_dir / day / f"{safe_task}-{record.status}-{record.record_id}.md"
+
+    def _index_doc_info(self, file_path: Path, *, record_type: str) -> dict[str, str]:
+        rel = file_path.relative_to(self.data_dir).as_posix()
+        return {
+            "doc_id": rel,
+            "path": rel,
+            "record_type": record_type,
+            "checksum": self._sha256(file_path),
+        }
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        return f"sha256:{digest}"
