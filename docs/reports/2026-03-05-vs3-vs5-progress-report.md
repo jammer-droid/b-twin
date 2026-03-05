@@ -12,7 +12,7 @@ VS3~VS5를 subagent-driven-development 방식(작은 청크 + 테스트 + 리뷰
 현재 브랜치 기준 구현/테스트가 모두 완료된 상태입니다.
 
 현재 전체 테스트 결과:
-- `pytest` → **173 passed, 5 skipped**
+- `pytest` → **176 passed, 5 skipped**
 
 ---
 
@@ -31,6 +31,7 @@ VS3~VS5를 subagent-driven-development 방식(작은 청크 + 테스트 + 리뷰
 
 ### 관련 커밋
 - `b7a6ff4` feat(vs3): promotion schedule config + CLI
+- `0ecf0eb` fix(vs3): schedule CLI write-safety/cron-validation/type-hardening
 - `130d751` feat(vs3): promoted history dashboard
 
 ### 테스트
