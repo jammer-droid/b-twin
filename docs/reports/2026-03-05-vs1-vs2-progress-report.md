@@ -11,8 +11,8 @@ Branch context:
 ## 1) Executive Summary
 
 - **VS1 is complete and merged/pushed**.
-- **VS2 is in active implementation** and core/approval/API/UI slices are already implemented.
-- Current VS2 branch is stable with full test pass on branch baseline.
+- **VS2 is near-complete** with core/approval/API/UI + batch run/history flow implemented.
+- Current VS2 branch is stable with full test pass on branch baseline and ready for merge.
 
 ---
 
@@ -82,8 +82,18 @@ Branch context:
 - error panel with `traceId`
 - UI test coverage
 
+#### VS2 Chunk 4 — Batch run + promoted history
+- promotion worker implemented (`approved -> queued -> promoted`)
+- promoted global entry persistence (`entries/global/promoted`)
+- API added:
+  - `POST /api/promotions/run-batch`
+  - `GET /api/promotions/history`
+- CLI added:
+  - `btwin promotion run`
+- API/CLI tests added for batch execution and history retrieval
+
 ### Current VS2 branch head
-- `5206fd3` feat(ui): add promotions dashboard page for proposal approval flow
+- `581f57d` feat(vs2): add promotion batch run API/CLI and promoted history endpoint
 
 ### VS2 commits so far
 - `7db8bc0` feat(promotion): add queue models and YAML store for VS2
@@ -91,17 +101,20 @@ Branch context:
 - `e80dcd2` feat(vs2): add promotion propose/approve API and Vincent-only approval gate
 - `2444669` fix(api): require admin token and actor binding for agents reload
 - `5206fd3` feat(ui): add promotions dashboard page for proposal approval flow
+- `5a02fa7` feat(vs2): add promotion batch worker and global promoted entry persistence
+- `581f57d` feat(vs2): add promotion batch run API/CLI and promoted history endpoint
 
 ---
 
 ## 4) Test Evidence
 
 Latest branch run on `feature/vs2-promotion`:
-- `pytest` => **148 passed, 5 skipped**
+- `pytest` => **154 passed, 5 skipped**
 
 Targeted suite highlights:
 - gate + promotions API + promotions UI all passing
-- promotion store edge-case tests passing
+- promotion store/worker edge-case tests passing
+- batch run API + CLI promotion run tests passing
 
 ---
 
@@ -120,15 +133,14 @@ No current known blocking issues for completed VS2 chunks.
 
 ## 6) Remaining Work / Next Chunk
 
-### Planned next chunk (starting now)
-**Promotion batch processing path**
-- approved -> queued -> promoted execution flow
-- worker/service entrypoint for batch run
-- tests for transition, failure handling, and idempotent rerun semantics
+### Immediate
+- Merge `feature/vs2-promotion` into `main` and push
+- Run merged-branch verification on `main`
 
-Then follow-up:
-- global promoted history surfacing
-- UI visibility for promoted results/history
+### Follow-up (post-merge)
+- MCP adapter surface for promotion APIs (`propose/approve/run-batch/history`)
+- Scheduler integration for periodic batch execution
+- Optional UI enhancement for promoted history details and source diff view
 
 ---
 
@@ -142,4 +154,4 @@ Then follow-up:
 ## 8) Status
 
 - VS1: ✅ Done (merged/pushed)
-- VS2: 🔄 In progress (core+api+ui base done, batch/promotion completion path next)
+- VS2: ✅ Implementation complete on feature branch (merge pending)
