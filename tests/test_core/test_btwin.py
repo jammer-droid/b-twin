@@ -135,6 +135,17 @@ def test_record_no_collision(tmp_path):
     assert twin.vector_store.count() == 2
 
 
+def test_record_convo(tmp_path):
+    twin, _ = make_btwin(tmp_path)
+    result = twin.record_convo("기억해줘", requested_by_user=True, topic="memory")
+
+    assert "convo" in result["path"]
+    convo_entries = twin.storage.list_convo_entries()
+    assert len(convo_entries) == 1
+    assert convo_entries[0].metadata.get("recordType") == "convo"
+    assert twin.vector_store.count() == 1
+
+
 # --- summary.md ---
 
 def test_end_session_updates_summary(tmp_path):

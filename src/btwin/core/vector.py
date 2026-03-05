@@ -20,16 +20,26 @@ class VectorStore:
             metadatas=[metadata] if metadata else None,
         )
 
-    def search(self, query: str, n_results: int = 3) -> list[dict]:
-        """Search for similar documents."""
+    def search(
+        self,
+        query: str,
+        n_results: int = 3,
+        metadata_filters: dict[str, str] | None = None,
+    ) -> list[dict]:
+        """Search for similar documents with optional metadata filtering."""
         if self._collection.count() == 0:
             return []
         n_results = min(n_results, self._collection.count())
-        results = self._collection.query(
-            query_texts=[query],
-            n_results=n_results,
-            include=["documents", "metadatas", "distances"],
-        )
+
+        query_args = {
+            "query_texts": [query],
+            "n_results": n_results,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if metadata_filters:
+            query_args["where"] = metadata_filters
+
+        results = self._collection.query(**query_args)
         output = []
         for i, doc_id in enumerate(results["ids"][0]):
             output.append({

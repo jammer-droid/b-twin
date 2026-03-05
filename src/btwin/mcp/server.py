@@ -72,7 +72,7 @@ def btwin_end_session(summary: str, slug: str | None = None) -> str:
 
 
 @mcp.tool()
-def btwin_search(query: str, n_results: int = 5) -> str:
+def btwin_search(query: str, n_results: int = 5, record_type: str | None = None) -> str:
     """Search past entries by semantic similarity.
 
     Returns relevant past records that match the query.
@@ -81,9 +81,11 @@ def btwin_search(query: str, n_results: int = 5) -> str:
     Args:
         query: The search query
         n_results: Maximum number of results to return (default: 5)
+        record_type: Optional metadata filter (e.g. convo, collab, entry)
     """
     twin = _get_twin()
-    results = twin.search(query, n_results=n_results)
+    filters = {"record_type": record_type} if record_type else None
+    results = twin.search(query, n_results=n_results, filters=filters)
     if not results:
         return "No matching records found."
     lines = []
@@ -107,6 +109,19 @@ def btwin_record(content: str, topic: str | None = None) -> str:
     twin = _get_twin()
     result = twin.record(content, topic=topic)
     return f"Recorded: {result['path']}"
+
+
+@mcp.tool()
+def btwin_convo_record(content: str, requested_by_user: bool = False) -> str:
+    """Explicitly record user conversation memory under entries/convo.
+
+    Args:
+        content: Conversation memory content to store
+        requested_by_user: Whether this was an explicit user remember request
+    """
+    twin = _get_twin()
+    result = twin.record_convo(content, requested_by_user=requested_by_user)
+    return f"Convo recorded: {result['path']}"
 
 
 @mcp.tool()

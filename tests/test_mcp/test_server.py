@@ -8,6 +8,7 @@ from btwin.mcp.server import (
     btwin_end_session,
     btwin_search,
     btwin_record,
+    btwin_convo_record,
     btwin_session_status,
     btwin_import_entry,
     read_entry,
@@ -25,6 +26,11 @@ def _mock_twin():
         {"id": "doc-1", "content": "Past record", "metadata": {"date": "2026-03-02", "slug": "test"}, "distance": 0.1}
     ]
     mock.record.return_value = {"date": "2026-03-02", "slug": "note-120000", "path": "/tmp/note.md"}
+    mock.record_convo.return_value = {
+        "date": "2026-03-02",
+        "slug": "convo-120000",
+        "path": "/tmp/.btwin/entries/convo/2026-03-02/convo-120000.md",
+    }
     mock.end_session.return_value = {"date": "2026-03-02", "slug": "greeting", "summary": "- Greeted user"}
     mock.session_status.return_value = {"active": True, "topic": "test", "message_count": 2, "created_at": "2026-03-02T00:00:00"}
     return mock
@@ -79,6 +85,16 @@ def test_btwin_search(mock_get_twin):
 
 
 @patch("btwin.mcp.server._get_twin")
+def test_btwin_search_with_record_type_filter(mock_get_twin):
+    mock = _mock_twin()
+    mock_get_twin.return_value = mock
+
+    btwin_search("Unreal", record_type="convo")
+
+    mock.search.assert_called_once_with("Unreal", n_results=5, filters={"record_type": "convo"})
+
+
+@patch("btwin.mcp.server._get_twin")
 def test_btwin_search_empty(mock_get_twin):
     mock = _mock_twin()
     mock.search.return_value = []
@@ -94,6 +110,17 @@ def test_btwin_record(mock_get_twin):
     mock_get_twin.return_value = _mock_twin()
     result = btwin_record("Test note", topic="test")
     assert "Recorded" in result
+
+
+@patch("btwin.mcp.server._get_twin")
+def test_btwin_convo_record(mock_get_twin):
+    mock = _mock_twin()
+    mock_get_twin.return_value = mock
+
+    result = btwin_convo_record("기억해줘", requested_by_user=True)
+
+    mock.record_convo.assert_called_once_with("기억해줘", requested_by_user=True)
+    assert "entries/convo" in result
 
 
 # --- btwin_session_status ---

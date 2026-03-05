@@ -96,7 +96,7 @@ class BTwin:
         self.vector_store.add(
             doc_id=doc_id,
             content=content,
-            metadata={"date": date, "slug": slug, "topic": session.topic or ""},
+            metadata={"date": date, "slug": slug, "topic": session.topic or "", "record_type": "entry"},
         )
 
         try:
@@ -123,9 +123,37 @@ class BTwin:
         self.session_manager.add_message("assistant", response)
         return response
 
-    def search(self, query: str, n_results: int = 5) -> list[dict]:
-        """Search past entries by semantic similarity."""
-        return self.vector_store.search(query, n_results=n_results)
+    def search(
+        self,
+        query: str,
+        n_results: int = 5,
+        filters: dict[str, str] | None = None,
+    ) -> list[dict]:
+        """Search past entries by semantic similarity with optional metadata filters."""
+        return self.vector_store.search(query, n_results=n_results, metadata_filters=filters)
+
+    def record_convo(self, content: str, requested_by_user: bool = False, topic: str | None = None) -> dict:
+        """Record explicit user conversation memory under convo namespace."""
+        entry = self.storage.save_convo_record(
+            content=content,
+            requested_by_user=requested_by_user,
+            topic=topic,
+        )
+        path = self.storage.convo_entries_dir / entry.date / f"{entry.slug}.md"
+
+        doc_id = f"{entry.date}/convo/{entry.slug}"
+        self.vector_store.add(
+            doc_id=doc_id,
+            content=content,
+            metadata={
+                "date": entry.date,
+                "slug": entry.slug,
+                "record_type": "convo",
+                "requested_by_user": str(requested_by_user).lower(),
+            },
+        )
+
+        return {"date": entry.date, "slug": entry.slug, "path": str(path)}
 
     def record(self, content: str, topic: str | None = None) -> dict:
         """Manually record a note."""
@@ -141,6 +169,7 @@ class BTwin:
             metadata={
                 "topic": topic or "",
                 "created_at": now.isoformat(),
+                "recordType": "entry",
             },
         )
         saved_path = self.storage.save_entry(entry)
@@ -149,7 +178,7 @@ class BTwin:
         self.vector_store.add(
             doc_id=doc_id,
             content=content,
-            metadata={"date": date, "slug": slug},
+            metadata={"date": date, "slug": slug, "record_type": "entry"},
         )
 
         try:
@@ -167,7 +196,7 @@ class BTwin:
         source_path: str | None = None,
     ) -> dict:
         """Import a single entry with explicit date, slug, and tags."""
-        metadata: dict[str, object] = {}
+        metadata: dict[str, object] = {"recordType": "entry"}
         if tags:
             metadata["tags"] = tags
         if source_path:
@@ -186,7 +215,7 @@ class BTwin:
         self.vector_store.add(
             doc_id=doc_id,
             content=content,
-            metadata={"date": date, "slug": slug},
+            metadata={"date": date, "slug": slug, "record_type": "entry"},
         )
 
         try:

@@ -536,6 +536,114 @@ def create_collab_app(
     def promoted_ui() -> str:
         return _promoted_ui_html()
 
+    def _entries_ui_html() -> str:
+        return """
+<!doctype html>
+<html lang=\"ko\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>B-TWIN Entries</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; color: #0f172a; }
+    h1 { margin: 0 0 16px; }
+    .toolbar { display:flex; gap:8px; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 8px; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Entries</h1>
+  <div class=\"toolbar\">
+    <label for=\"recordTypeFilter\">recordType</label>
+    <select id=\"recordTypeFilter\">
+      <option value=\"all\" selected>all</option>
+      <option value=\"entry\">entry</option>
+      <option value=\"collab\">collab</option>
+      <option value=\"convo\">convo</option>
+    </select>
+    <button id=\"refreshBtn\">새로고침</button>
+  </div>
+
+  <table>
+    <thead><tr><th>recordType</th><th>id/slug</th><th>date</th><th>summary</th></tr></thead>
+    <tbody id=\"entriesBody\"></tbody>
+  </table>
+
+  <script>
+    function esc(v) {
+      return String(v ?? '').replace(/[&<>\"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    async function loadEntries() {
+      const type = document.getElementById('recordTypeFilter').value;
+      const q = type === 'all' ? '' : `?recordType=${encodeURIComponent(type)}`;
+      const res = await fetch(`/api/entries${q}`);
+      const data = await res.json();
+
+      const rows = (data.items || []).map(item => `
+        <tr>
+          <td>${esc(item.recordType)}</td>
+          <td>${esc(item.recordId || item.slug)}</td>
+          <td>${esc(item.date)}</td>
+          <td>${esc(item.summary || '')}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('entriesBody').innerHTML = rows || '<tr><td colspan=\"4\">데이터 없음</td></tr>';
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadEntries);
+    document.getElementById('recordTypeFilter').addEventListener('change', loadEntries);
+    loadEntries();
+  </script>
+</body>
+</html>
+        """
+
+    @app.get("/ui/entries", response_class=HTMLResponse)
+    def entries_ui() -> str:
+        return _entries_ui_html()
+
+    @app.get("/api/entries")
+    def list_entries(recordType: str | None = None):
+        items: list[dict[str, object]] = []
+
+        if recordType in (None, "all", "entry"):
+            for e in storage.list_entries():
+                items.append(
+                    {
+                        "recordType": "entry",
+                        "date": e.date,
+                        "slug": e.slug,
+                        "summary": e.content.split("\n", 1)[0][:120],
+                    }
+                )
+
+        if recordType in (None, "all", "convo"):
+            for e in storage.list_convo_entries():
+                items.append(
+                    {
+                        "recordType": "convo",
+                        "date": e.date,
+                        "slug": e.slug,
+                        "summary": e.content.split("\n", 1)[0][:120],
+                    }
+                )
+
+        if recordType in (None, "all", "collab"):
+            for c in storage.list_collab_records():
+                items.append(
+                    {
+                        "recordType": "collab",
+                        "date": c.created_at.date().isoformat(),
+                        "recordId": c.record_id,
+                        "summary": c.summary,
+                    }
+                )
+
+        return {"items": items}
+
     @app.post("/api/collab/records")
     def create_record(payload: CreateCollabRecordRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
         allowed = registry.agents

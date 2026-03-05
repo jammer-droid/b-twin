@@ -1,5 +1,6 @@
 """Markdown file storage for B-TWIN entries."""
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -13,6 +14,7 @@ class Storage:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
         self.entries_dir = data_dir / "entries"
+        self.convo_entries_dir = self.entries_dir / "convo"
         self.collab_entries_dir = self.entries_dir / "collab"
         self.promoted_entries_dir = self.entries_dir / "global"
 
@@ -83,6 +85,51 @@ class Storage:
             return None
         raw = file_path.read_text()
         return self._parse_file(raw, date, slug)
+
+    def save_convo_record(
+        self,
+        *,
+        content: str,
+        requested_by_user: bool = False,
+        topic: str | None = None,
+        created_at: datetime | None = None,
+    ) -> Entry:
+        """Save explicit conversation memory under entries/convo/YYYY-MM-DD/."""
+        now = created_at or datetime.now(timezone.utc)
+        date = now.strftime("%Y-%m-%d")
+        slug = f"convo-{now.strftime('%H%M%S%f')}"
+
+        date_dir = self.convo_entries_dir / date
+        date_dir.mkdir(parents=True, exist_ok=True)
+        file_path = date_dir / f"{slug}.md"
+
+        metadata: dict[str, object] = {
+            "date": date,
+            "slug": slug,
+            "recordType": "convo",
+            "requestedByUser": requested_by_user,
+            "created_at": now.isoformat(),
+        }
+        if topic:
+            metadata["topic"] = topic
+
+        frontmatter = yaml.dump(metadata, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
+        file_path.write_text(f"---\n{frontmatter}\n---\n\n{content}\n")
+        return Entry(date=date, slug=slug, content=content, metadata=metadata)
+
+    def list_convo_entries(self) -> list[Entry]:
+        """List explicit convo records."""
+        entries: list[Entry] = []
+        if not self.convo_entries_dir.exists():
+            return entries
+
+        for date_dir in sorted(self.convo_entries_dir.iterdir()):
+            if not date_dir.is_dir():
+                continue
+            for md_file in sorted(date_dir.glob("*.md")):
+                raw = md_file.read_text()
+                entries.append(self._parse_file(raw, date_dir.name, md_file.stem))
+        return entries
 
     def save_collab_record(self, record: CollabRecord) -> Path:
         """Save a collab record under entries/collab/YYYY-MM-DD/."""
