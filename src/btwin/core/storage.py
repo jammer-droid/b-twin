@@ -1,6 +1,7 @@
 """Markdown file storage for B-TWIN entries."""
 
 from pathlib import Path
+from typing import Iterator
 
 import yaml
 
@@ -84,12 +85,8 @@ class Storage:
 
     def save_collab_record(self, record: CollabRecord) -> Path:
         """Save a collab record under entries/collab/YYYY-MM-DD/."""
-        day = record.created_at.date().isoformat()
-        date_dir = self.collab_entries_dir / day
-        date_dir.mkdir(parents=True, exist_ok=True)
-
-        safe_task = record.task_id.replace("/", "-")
-        file_path = date_dir / f"{safe_task}-{record.status}-{record.record_id}.md"
+        file_path = self._collab_path(record)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
 
         frontmatter = yaml.dump(
             record.model_dump(by_alias=True, mode="json"),
@@ -97,40 +94,94 @@ class Storage:
             allow_unicode=True,
             sort_keys=False,
         ).strip()
-
-        body_lines = [record.summary, "", "## Evidence"]
-        body_lines.extend([f"- {item}" for item in record.evidence])
-        body_lines.append("")
-        body_lines.append("## Next Action")
-        body_lines.extend([f"- {item}" for item in record.next_action])
-        body = "\n".join(body_lines)
+        body = self._render_collab_body(record)
 
         file_path.write_text(f"---\n{frontmatter}\n---\n\n{body}\n")
         return file_path
 
     def read_collab_record(self, record_id: str) -> CollabRecord | None:
         """Read a collab record by record id."""
-        if not self.collab_entries_dir.exists():
+        loaded = self._find_collab_file(record_id)
+        if loaded is None:
+            return None
+        return loaded[0]
+
+    def read_collab_record_document(self, record_id: str) -> dict[str, str | dict[str, object]] | None:
+        """Read collab record with frontmatter and markdown body."""
+        loaded = self._find_collab_file(record_id)
+        if loaded is None:
             return None
 
-        for file_path in sorted(self.collab_entries_dir.glob("*/*.md")):
-            raw = file_path.read_text()
-            parsed = self._parse_collab_frontmatter(raw)
-            if parsed and parsed.record_id == record_id:
-                return parsed
-        return None
+        record, file_path, body = loaded
+        return {
+            "recordId": record.record_id,
+            "path": str(file_path),
+            "frontmatter": record.model_dump(by_alias=True, mode="json"),
+            "content": body,
+        }
+
+    def update_collab_record(
+        self,
+        record_id: str,
+        *,
+        status: str,
+        version: int,
+        author_agent: str | None = None,
+    ) -> CollabRecord | None:
+        """Update status/version for an existing collab record."""
+        loaded = self._find_collab_file(record_id)
+        if loaded is None:
+            return None
+
+        existing, old_path, _body = loaded
+        payload = existing.model_dump(by_alias=True, mode="json")
+        payload["status"] = status
+        payload["version"] = version
+        if author_agent is not None:
+            payload["authorAgent"] = author_agent
+
+        updated = CollabRecord.model_validate(payload)
+        new_path = self._collab_path(updated)
+        self.save_collab_record(updated)
+        if old_path != new_path and old_path.exists():
+            old_path.unlink()
+        return updated
 
     def list_collab_records(self) -> list[CollabRecord]:
         """List all collab records."""
         records: list[CollabRecord] = []
-        if not self.collab_entries_dir.exists():
-            return records
-
-        for file_path in sorted(self.collab_entries_dir.glob("*/*.md")):
-            parsed = self._parse_collab_frontmatter(file_path.read_text())
-            if parsed:
-                records.append(parsed)
+        for file_path in self._iter_collab_files():
+            loaded = self._load_collab_file(file_path)
+            if loaded is None:
+                continue
+            records.append(loaded[0])
         return records
+
+    def _find_collab_file(self, record_id: str) -> tuple[CollabRecord, Path, str] | None:
+        for file_path in self._iter_collab_files():
+            loaded = self._load_collab_file(file_path)
+            if loaded is None:
+                continue
+            record, body = loaded
+            if record.record_id == record_id:
+                return record, file_path, body
+        return None
+
+    def _iter_collab_files(self) -> Iterator[Path]:
+        if not self.collab_entries_dir.exists():
+            return iter(())
+        return iter(sorted(self.collab_entries_dir.glob("*/*.md")))
+
+    @staticmethod
+    def _load_collab_file(file_path: Path) -> tuple[CollabRecord, str] | None:
+        raw = file_path.read_text()
+        parsed = Storage._parse_collab_frontmatter(raw)
+        if parsed is None:
+            return None
+
+        parts = raw.split("---\n", 2)
+        body = parts[2].lstrip("\n") if len(parts) >= 3 else ""
+        return parsed, body
 
     @staticmethod
     def _parse_collab_frontmatter(raw: str) -> CollabRecord | None:
@@ -145,3 +196,17 @@ class Storage:
             return CollabRecord.model_validate(metadata)
         except Exception:
             return None
+
+    @staticmethod
+    def _render_collab_body(record: CollabRecord) -> str:
+        body_lines = [record.summary, "", "## Evidence"]
+        body_lines.extend([f"- {item}" for item in record.evidence])
+        body_lines.append("")
+        body_lines.append("## Next Action")
+        body_lines.extend([f"- {item}" for item in record.next_action])
+        return "\n".join(body_lines)
+
+    def _collab_path(self, record: CollabRecord) -> Path:
+        day = record.created_at.date().isoformat()
+        safe_task = record.task_id.replace("/", "-")
+        return self.collab_entries_dir / day / f"{safe_task}-{record.status}-{record.record_id}.md"

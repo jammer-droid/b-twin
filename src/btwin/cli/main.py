@@ -70,6 +70,20 @@ def serve():
     mcp_main()
 
 
+@app.command("serve-api")
+def serve_api(
+    host: str = typer.Option("127.0.0.1", help="Host to bind HTTP API"),
+    port: int = typer.Option(8787, help="Port for HTTP API"),
+):
+    """Start the B-TWIN HTTP API server for collab workflow."""
+    import uvicorn
+    from btwin.api.collab_api import create_default_collab_app
+
+    console.print(f"[bold]Starting B-TWIN HTTP API on http://{host}:{port}[/bold]")
+    app_instance = create_default_collab_app()
+    uvicorn.run(app_instance, host=host, port=port)
+
+
 @app.command()
 def search(query: str, n: int = typer.Option(5, help="Number of results")):
     """Search past entries by semantic similarity."""
