@@ -180,7 +180,7 @@ class BTwin:
             content=content,
             metadata=metadata,
         )
-        self.storage.save_entry(entry)
+        saved_path = self.storage.save_entry(entry)
 
         doc_id = f"{date}/{slug}"
         self.vector_store.add(
@@ -194,11 +194,7 @@ class BTwin:
         except Exception:
             logger.warning("Failed to update summary for %s/%s", date, slug)
 
-        return {
-            "date": date,
-            "slug": slug,
-            "path": str(self.storage.entries_dir / date / f"{slug}.md"),
-        }
+        return {"date": date, "slug": slug, "path": str(saved_path)}
 
     def session_status(self) -> dict:
         """Get the current session status."""
