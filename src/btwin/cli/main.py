@@ -18,9 +18,11 @@ app = typer.Typer(
 sources_app = typer.Typer(help="Manage B-TWIN data sources for dashboard workflows.")
 promotion_app = typer.Typer(help="Manage promotion queue operations.")
 indexer_app = typer.Typer(help="Manage core indexer workflows.")
+runtime_app = typer.Typer(help="Inspect runtime mode and integration settings.")
 app.add_typer(sources_app, name="sources")
 app.add_typer(promotion_app, name="promotion")
 app.add_typer(indexer_app, name="indexer")
+app.add_typer(runtime_app, name="runtime")
 
 console = Console(soft_wrap=True)
 
@@ -370,6 +372,15 @@ def indexer_repair(doc_id: str = typer.Option(..., "--doc-id", help="Document id
     result = idx.repair(doc_id)
     status = "ok" if result.get("ok") else "failed"
     console.print(f"Indexer repair {status} doc_id={doc_id} status={result.get('status')}")
+
+
+@runtime_app.command("show")
+def runtime_show():
+    """Show current runtime mode and OpenClaw config path."""
+    config = _get_config()
+    openclaw_path = config.runtime.openclaw_config_path
+    console.print(f"Runtime mode: {config.runtime.mode}")
+    console.print(f"OpenClaw config path: {openclaw_path if openclaw_path else '-'}")
 
 
 if __name__ == "__main__":

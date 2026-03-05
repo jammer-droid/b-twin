@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 
 import yaml
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -38,12 +40,18 @@ class PromotionConfig(BaseModel):
     schedule: str = "0 9,21 * * *"
 
 
+class RuntimeConfig(BaseModel):
+    mode: Literal["attached", "standalone"] = "attached"
+    openclaw_config_path: Path | None = None
+
+
 class BTwinConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
     promotion: PromotionConfig = Field(default_factory=PromotionConfig)
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     data_dir: Path = Field(default_factory=resolve_data_dir)
 
 

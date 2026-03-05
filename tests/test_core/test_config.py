@@ -43,6 +43,33 @@ def test_unknown_key_rejected():
         BTwinConfig(unknown_key="value")
 
 
+def test_runtime_defaults_to_attached():
+    config = BTwinConfig()
+    assert config.runtime.mode == "attached"
+    assert config.runtime.openclaw_config_path is None
+
+
+def test_runtime_mode_loads_from_yaml(tmp_path):
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(
+        """
+runtime:
+  mode: standalone
+  openclaw_config_path: ~/.openclaw/config.toml
+"""
+    )
+
+    config = load_config(cfg_file)
+
+    assert config.runtime.mode == "standalone"
+    assert config.runtime.openclaw_config_path == Path("~/.openclaw/config.toml")
+
+
+def test_runtime_mode_rejects_invalid_value():
+    with pytest.raises(ValidationError):
+        BTwinConfig(runtime={"mode": "invalid"})
+
+
 # --- resolve_data_dir tests ---
 
 

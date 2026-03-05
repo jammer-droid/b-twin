@@ -1200,9 +1200,13 @@ def create_default_collab_app() -> FastAPI:
     extra_agents_env = os.environ.get("BTWIN_EXTRA_AGENTS", "")
     extra_agents = {a.strip() for a in extra_agents_env.split(",") if a.strip()}
 
+    openclaw_config_path = os.environ.get("BTWIN_OPENCLAW_CONFIG_PATH")
+    if not openclaw_config_path and config.runtime.openclaw_config_path:
+        openclaw_config_path = str(config.runtime.openclaw_config_path)
+
     return create_collab_app(
         data_dir=config.data_dir,
         extra_agents=extra_agents,
-        openclaw_config_path=os.environ.get("BTWIN_OPENCLAW_CONFIG_PATH"),
+        openclaw_config_path=openclaw_config_path,
         admin_token=os.environ.get("BTWIN_ADMIN_TOKEN"),
     )
