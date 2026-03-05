@@ -10,6 +10,12 @@
 
 ---
 
+## Decision Log (2026-03-05)
+
+- API-first contract 고정: 프레임워크/웹이 참조하는 외부 계약(schema/endpoint)을 우선 확정한다.
+- Adapter/Façade 흡수 계층: B-TWIN 엔진 내부 변경은 어댑터에서 흡수하고 외부 계약은 유지한다.
+- 병렬 개발 기준: Backend contract PR 병합 후 UI binding PR을 연결한다.
+
 ## Global Rules (모든 VS 공통)
 
 - 권한 정책
