@@ -12,7 +12,7 @@ VS3~VS5를 subagent-driven-development 방식(작은 청크 + 테스트 + 리뷰
 현재 브랜치 기준 구현/테스트가 모두 완료된 상태입니다.
 
 현재 전체 테스트 결과:
-- `pytest` → **176 passed, 5 skipped**
+- `pytest` → **178 passed, 5 skipped**
 
 ---
 
@@ -77,12 +77,16 @@ VS3~VS5를 subagent-driven-development 방식(작은 청크 + 테스트 + 리뷰
    - `src/btwin/core/audit.py` (`AuditLogger`, JSONL)
 2. API 게이트/승격 이벤트 감사
    - gate reject 이벤트
+   - gate success 이벤트 (`gate_handoff_succeeded`, `gate_complete_succeeded`)
    - promotion proposed / approved / batch run 이벤트
 3. MCP 측 감사 이벤트
    - `btwin_convo_record` 실행 이벤트 기록
+4. 민감 데이터 엔드포인트 보호
+   - `GET /api/entries`, `GET /api/promotions/history`를 admin token scoped로 보호
 
 ### 관련 커밋
 - `2dde18c` feat(vs5): audit logging for gate/promotion across API/MCP
+- `e625dfb` fix(vs5): admin-scoped data endpoints + gate success audit events
 
 ### 테스트
 - `tests/test_core/test_audit.py`
