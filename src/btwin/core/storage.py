@@ -1,6 +1,7 @@
 """Markdown file storage for B-TWIN entries."""
 
 import hashlib
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
@@ -301,14 +302,16 @@ class Storage:
         return docs
 
     def _find_collab_file(self, record_id: str) -> tuple[CollabRecord, Path, str] | None:
+        best: tuple[CollabRecord, Path, str] | None = None
         for file_path in self._iter_collab_files():
             loaded = self._load_collab_file(file_path)
             if loaded is None:
                 continue
             record, body = loaded
             if record.record_id == record_id:
-                return record, file_path, body
-        return None
+                if best is None or record.version > best[0].version:
+                    best = (record, file_path, body)
+        return best
 
     def _iter_collab_files(self) -> Iterator[Path]:
         if not self.collab_entries_dir.exists():
@@ -362,7 +365,7 @@ class Storage:
 
     def _collab_path(self, record: CollabRecord) -> Path:
         day = record.created_at.date().isoformat()
-        safe_task = record.task_id.replace("/", "-")
+        safe_task = re.sub(r'[^a-zA-Z0-9_-]', '-', record.task_id)
         return self.collab_entries_dir / day / f"{safe_task}-{record.status}-{record.record_id}.md"
 
     def _index_doc_info(self, file_path: Path, *, record_type: str) -> dict[str, str]:
