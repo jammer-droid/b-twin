@@ -1189,6 +1189,20 @@ def create_collab_app(
     return app
 
 
+def _resolve_runtime_openclaw_path(config: BTwinConfig) -> str | None:
+    if config.runtime.mode == "standalone":
+        return None
+
+    env_path = os.environ.get("BTWIN_OPENCLAW_CONFIG_PATH")
+    if env_path:
+        return env_path
+
+    if config.runtime.openclaw_config_path:
+        return str(config.runtime.openclaw_config_path)
+
+    return None
+
+
 def create_default_collab_app() -> FastAPI:
     """Create API app from default B-TWIN/OpenClaw runtime config."""
     config_path = Path.home() / ".btwin" / "config.yaml"
@@ -1200,13 +1214,9 @@ def create_default_collab_app() -> FastAPI:
     extra_agents_env = os.environ.get("BTWIN_EXTRA_AGENTS", "")
     extra_agents = {a.strip() for a in extra_agents_env.split(",") if a.strip()}
 
-    openclaw_config_path = os.environ.get("BTWIN_OPENCLAW_CONFIG_PATH")
-    if not openclaw_config_path and config.runtime.openclaw_config_path:
-        openclaw_config_path = str(config.runtime.openclaw_config_path)
-
     return create_collab_app(
         data_dir=config.data_dir,
         extra_agents=extra_agents,
-        openclaw_config_path=openclaw_config_path,
+        openclaw_config_path=_resolve_runtime_openclaw_path(config),
         admin_token=os.environ.get("BTWIN_ADMIN_TOKEN"),
     )

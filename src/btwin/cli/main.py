@@ -1,5 +1,6 @@
 """B-TWIN CLI — command-line interface."""
 
+import os
 import re
 from pathlib import Path
 
@@ -374,13 +375,29 @@ def indexer_repair(doc_id: str = typer.Option(..., "--doc-id", help="Document id
     console.print(f"Indexer repair {status} doc_id={doc_id} status={result.get('status')}")
 
 
+def _effective_runtime_openclaw_path(config: BTwinConfig) -> str | None:
+    if config.runtime.mode == "standalone":
+        return None
+
+    env_path = os.environ.get("BTWIN_OPENCLAW_CONFIG_PATH")
+    if env_path:
+        return env_path
+
+    if config.runtime.openclaw_config_path:
+        return str(config.runtime.openclaw_config_path)
+
+    return None
+
+
 @runtime_app.command("show")
 def runtime_show():
     """Show current runtime mode and OpenClaw config path."""
     config = _get_config()
-    openclaw_path = config.runtime.openclaw_config_path
+    configured_openclaw_path = config.runtime.openclaw_config_path
+    effective_openclaw_path = _effective_runtime_openclaw_path(config)
     console.print(f"Runtime mode: {config.runtime.mode}")
-    console.print(f"OpenClaw config path: {openclaw_path if openclaw_path else '-'}")
+    console.print(f"Configured OpenClaw config path: {configured_openclaw_path if configured_openclaw_path else '-'}")
+    console.print(f"Effective OpenClaw config path: {effective_openclaw_path if effective_openclaw_path else '-'}")
 
 
 if __name__ == "__main__":
