@@ -1,0 +1,49 @@
+"""Collaboration record models for orchestrator-first framework."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from secrets import randbits
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+
+def _encode_crockford(value: int, length: int) -> str:
+    chars = ["0"] * length
+    for i in range(length - 1, -1, -1):
+        chars[i] = _CROCKFORD[value & 31]
+        value >>= 5
+    return "".join(chars)
+
+
+def generate_record_id(now: datetime | None = None) -> str:
+    """Generate a record id in `rec_<ULID>` shape.
+
+    ULID consists of 48-bit timestamp + 80-bit randomness encoded in Crockford base32.
+    """
+    ts = now or datetime.now(timezone.utc)
+    timestamp_ms = int(ts.timestamp() * 1000)
+    ulid_ts = _encode_crockford(timestamp_ms, 10)
+    ulid_rand = _encode_crockford(randbits(80), 16)
+    return f"rec_{ulid_ts}{ulid_rand}"
+
+
+CollabStatus = Literal["draft", "handed_off", "completed"]
+
+
+class CollabRecord(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    record_id: str = Field(alias="recordId", pattern=r"^rec_[0-9A-HJKMNP-TV-Z]{26}$")
+    task_id: str = Field(alias="taskId", min_length=1)
+    record_type: Literal["collab"] = Field(alias="recordType")
+    summary: str = Field(min_length=1)
+    evidence: list[str] = Field(min_length=1)
+    next_action: list[str] = Field(alias="nextAction", min_length=1)
+    status: CollabStatus
+    author_agent: str = Field(alias="authorAgent", min_length=1)
+    created_at: datetime = Field(alias="createdAt")
+    version: int = Field(ge=1)
