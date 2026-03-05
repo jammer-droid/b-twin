@@ -21,12 +21,14 @@ app.add_typer(promotion_app, name="promotion")
 
 console = Console(soft_wrap=True)
 
-CONFIG_PATH = Path.home() / ".btwin" / "config.yaml"
+def _config_path() -> Path:
+    return Path.home() / ".btwin" / "config.yaml"
 
 
 def _get_config() -> BTwinConfig:
-    if CONFIG_PATH.exists():
-        return load_config(CONFIG_PATH)
+    config_path = _config_path()
+    if config_path.exists():
+        return load_config(config_path)
     return BTwinConfig()
 
 
@@ -37,7 +39,8 @@ def _get_registry() -> SourceRegistry:
 @app.command()
 def setup():
     """Interactive setup — configure API key and preferences."""
-    config_dir = CONFIG_PATH.parent
+    config_path = _config_path()
+    config_dir = config_path.parent
     config_dir.mkdir(parents=True, exist_ok=True)
 
     console.print("[bold]B-TWIN Setup[/bold]\n")
@@ -53,13 +56,14 @@ def setup():
             "api_key": api_key,
         },
         "session": {"timeout_minutes": 10},
+        "promotion": {"enabled": True, "schedule": "0 9,21 * * *"},
         "data_dir": str(Path.home() / ".btwin"),
     }
 
-    with open(CONFIG_PATH, "w") as f:
+    with open(config_path, "w") as f:
         yaml.dump(config_data, f, default_flow_style=False)
 
-    console.print(f"\n[green]Config saved to {CONFIG_PATH}[/green]")
+    console.print(f"\n[green]Config saved to {config_path}[/green]")
 
 
 @app.command()
@@ -229,6 +233,35 @@ def sources_refresh():
     registry.ensure_global_default()
     updated = registry.refresh_entry_counts()
     console.print(f"[green]Refreshed {len(updated)} source(s).[/green]")
+
+
+@promotion_app.command("schedule")
+def promotion_schedule(
+    set_value: str | None = typer.Option(None, "--set", help="Set cron-style schedule expression"),
+):
+    """Show or update promotion batch schedule."""
+    config_path = _config_path()
+    config = _get_config()
+
+    if set_value is None:
+        console.print(f"Promotion schedule: [bold]{config.promotion.schedule}[/bold]")
+        console.print(f"Enabled: {'yes' if config.promotion.enabled else 'no'}")
+        return
+
+    data: dict[str, object]
+    if config_path.exists():
+        data = yaml.safe_load(config_path.read_text()) or {}
+    else:
+        data = {}
+
+    promotion_cfg = dict(data.get("promotion", {}))
+    promotion_cfg["enabled"] = bool(promotion_cfg.get("enabled", True))
+    promotion_cfg["schedule"] = set_value
+    data["promotion"] = promotion_cfg
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
+    console.print(f"[green]Promotion schedule updated:[/green] {set_value}")
 
 
 @promotion_app.command("run")

@@ -33,11 +33,17 @@ class SessionConfig(BaseModel):
     timeout_minutes: int = 10
 
 
+class PromotionConfig(BaseModel):
+    enabled: bool = True
+    schedule: str = "0 9,21 * * *"
+
+
 class BTwinConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
+    promotion: PromotionConfig = Field(default_factory=PromotionConfig)
     data_dir: Path = Field(default_factory=resolve_data_dir)
 
 
