@@ -39,3 +39,21 @@ def test_count(tmp_path):
     assert store.count() == 0
     store.add(doc_id="doc-1", content="First entry", metadata={"date": "2026-03-02", "slug": "first"})
     assert store.count() == 1
+
+
+def test_vector_delete_removes_document(tmp_path):
+    store = VectorStore(persist_dir=tmp_path / "index")
+    store.add(doc_id="doc-1", content="hello", metadata={"record_type": "entry"})
+    assert store.count() == 1
+
+    store.delete("doc-1")
+
+    assert store.count() == 0
+
+
+def test_vector_has_returns_existence(tmp_path):
+    store = VectorStore(persist_dir=tmp_path / "index")
+    assert store.has("missing") is False
+
+    store.add(doc_id="doc-1", content="hello", metadata={"record_type": "entry"})
+    assert store.has("doc-1") is True
