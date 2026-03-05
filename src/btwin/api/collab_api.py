@@ -1075,7 +1075,7 @@ def create_collab_app(
         if not x_admin_token or not hmac.compare_digest(x_admin_token, admin_token):
             return _error(403, "FORBIDDEN", "admin token is required")
 
-        worker = PromotionWorker(storage=storage, promotion_store=promotion_store)
+        worker = PromotionWorker(storage=storage, promotion_store=promotion_store, indexer=_indexer())
         result = worker.run_once(limit=payload.limit)
         _audit(
             "promotion_batch_run",

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from btwin.core.collab_models import CollabRecord
+from btwin.core.indexer import CoreIndexer
 from btwin.core.promotion_store import PromotionStore
 from btwin.core.promotion_worker import PromotionWorker
 from btwin.core.storage import Storage
@@ -101,3 +102,35 @@ def test_worker_skips_missing_source_record(tmp_path: Path):
     assert result["errors"] == 1
     approved = promotion_store.list_items(status="approved")
     assert len(approved) == 1
+
+
+def test_promoted_entry_is_vector_indexed(tmp_path: Path):
+    """Promoted entries should appear in the vector index after batch promotion."""
+    indexer = CoreIndexer(data_dir=tmp_path)
+    storage = indexer.storage
+    promotion_store = PromotionStore(tmp_path / "promotion_queue.yaml")
+
+    source = _collab_record()
+    storage.save_collab_record(source)
+
+    item = promotion_store.enqueue(source_record_id=source.record_id, proposed_by="codex-code")
+    promotion_store.set_status(item.item_id, "approved", actor="main")
+
+    worker = PromotionWorker(storage=storage, promotion_store=promotion_store, indexer=indexer)
+    result = worker.run_once()
+
+    assert result["promoted"] == 1
+
+    # The promoted entry must be in the index manifest as "indexed".
+    expected_rel = (
+        storage.promoted_entries_dir / "promoted" / f"{item.item_id}.md"
+    ).relative_to(tmp_path).as_posix()
+    manifest_entry = indexer.manifest.get(expected_rel)
+    assert manifest_entry is not None, f"Expected manifest entry for {expected_rel}"
+    assert manifest_entry.status == "indexed"
+    assert manifest_entry.record_type == "promoted"
+
+    # The content should be searchable in the vector store.
+    results = indexer.vector_store.search("서버 충돌", n_results=5)
+    doc_ids = [r["id"] for r in results]
+    assert expected_rel in doc_ids, f"Promoted entry {expected_rel} not found in vector search results"

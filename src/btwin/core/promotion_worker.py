@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
+from pathlib import Path
 
+from btwin.core.indexer import CoreIndexer
 from btwin.core.promotion_store import (
     PromotionActorRequiredError,
     PromotionItemNotFoundError,
@@ -30,9 +33,16 @@ class PromotionBatchResult:
 
 
 class PromotionWorker:
-    def __init__(self, *, storage: Storage, promotion_store: PromotionStore) -> None:
+    def __init__(
+        self,
+        *,
+        storage: Storage,
+        promotion_store: PromotionStore,
+        indexer: CoreIndexer | None = None,
+    ) -> None:
         self.storage = storage
         self.promotion_store = promotion_store
+        self.indexer = indexer
 
     def run_once(self, limit: int | None = None) -> dict[str, int]:
         result = PromotionBatchResult()
@@ -69,11 +79,14 @@ class PromotionWorker:
                     result.errors += 1
                     continue
 
-            self.storage.save_promoted_entry(
+            saved_path = self.storage.save_promoted_entry(
                 item_id=item.item_id,
                 source_record_id=item.source_record_id,
                 content=str(source_doc.get("content", "")),
             )
+
+            if self.indexer:
+                self._index_promoted(saved_path)
 
             try:
                 self.promotion_store.set_status(item.item_id, "promoted", actor="main")
@@ -82,3 +95,22 @@ class PromotionWorker:
                 result.errors += 1
 
         return result.as_dict()
+
+    def _index_promoted(self, saved_path: Path) -> None:
+        """Mark a promoted entry for indexing and refresh."""
+        assert self.indexer is not None
+        data_dir = self.indexer.data_dir
+        rel = saved_path.relative_to(data_dir).as_posix()
+        checksum = self._sha256(saved_path)
+        self.indexer.mark_pending(
+            doc_id=rel,
+            path=rel,
+            record_type="promoted",
+            checksum=checksum,
+        )
+        self.indexer.refresh(limit=1)
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        return f"sha256:{digest}"

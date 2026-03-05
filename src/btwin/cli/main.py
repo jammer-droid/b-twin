@@ -292,6 +292,7 @@ def promotion_schedule(
 @promotion_app.command("run")
 def promotion_run(limit: int | None = typer.Option(None, min=1, help="Max approved items to process")):
     """Run one promotion batch (approved -> queued -> promoted)."""
+    from btwin.core.indexer import CoreIndexer
     from btwin.core.promotion_store import PromotionStore
     from btwin.core.promotion_worker import PromotionWorker
     from btwin.core.storage import Storage
@@ -299,7 +300,8 @@ def promotion_run(limit: int | None = typer.Option(None, min=1, help="Max approv
     config = _get_config()
     storage = Storage(config.data_dir)
     store = PromotionStore(config.data_dir / "promotion_queue.yaml")
-    worker = PromotionWorker(storage=storage, promotion_store=store)
+    indexer = CoreIndexer(data_dir=config.data_dir)
+    worker = PromotionWorker(storage=storage, promotion_store=store, indexer=indexer)
 
     result = worker.run_once(limit=limit)
     console.print(
