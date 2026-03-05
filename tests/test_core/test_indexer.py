@@ -69,3 +69,35 @@ def test_repair_recovers_failed_document(tmp_path):
 
     assert result["ok"] is True
     assert result["status"] == "indexed"
+
+
+def test_repair_targets_specific_doc_even_with_other_pending_items(tmp_path):
+    idx = CoreIndexer(data_dir=tmp_path)
+
+    pending_entry = idx.storage.save_convo_record(content="pending", requested_by_user=True)
+    target_entry = idx.storage.save_convo_record(content="target", requested_by_user=True)
+
+    pending_path = idx.storage.convo_entries_dir / pending_entry.date / f"{pending_entry.slug}.md"
+    target_path = idx.storage.convo_entries_dir / target_entry.date / f"{target_entry.slug}.md"
+
+    pending_rel = str(pending_path.relative_to(tmp_path))
+    target_rel = str(target_path.relative_to(tmp_path))
+
+    idx.mark_pending(
+        doc_id=pending_rel,
+        path=pending_rel,
+        record_type="convo",
+        checksum=_sha256_for(pending_path),
+    )
+    idx.mark_pending(
+        doc_id=target_rel,
+        path=target_rel,
+        record_type="convo",
+        checksum=_sha256_for(target_path),
+    )
+    idx.manifest.mark_status(target_rel, "failed", error="embedding timeout")
+
+    result = idx.repair(target_rel)
+
+    assert result["ok"] is True
+    assert idx.manifest.get(target_rel).status == "indexed"

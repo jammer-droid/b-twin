@@ -1,3 +1,5 @@
+import pytest
+
 from btwin.core.storage import Storage
 from btwin.core.models import Entry
 
@@ -185,3 +187,15 @@ def test_save_entry_no_collision_works_as_before(tmp_path):
     assert saved_path.exists()
     loaded = storage.read_entry("2026-03-02", "no-collision")
     assert loaded.content == "# New\n\nBrand new entry."
+
+
+def test_save_convo_record_rejects_invalid_contract(tmp_path, monkeypatch):
+    storage = Storage(data_dir=tmp_path)
+
+    monkeypatch.setattr(
+        "btwin.core.storage.validate_document_contract",
+        lambda record_type, metadata: (False, "forced invalid contract"),
+    )
+
+    with pytest.raises(ValueError, match="invalid convo contract"):
+        storage.save_convo_record(content="hello", requested_by_user=True)

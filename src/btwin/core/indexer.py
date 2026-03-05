@@ -119,20 +119,38 @@ class CoreIndexer:
             self.manifest.mark_status(item.doc_id, "deleted", error="repair: source missing")
             return {"ok": False, "error": "source_missing", "doc_id": doc_id, "status": "deleted"}
 
+        checksum = self._sha256(source_path)
         updated = self.manifest.upsert(
             doc_id=item.doc_id,
             path=item.path,
             record_type=item.record_type,
-            checksum=item.checksum,
+            checksum=checksum,
             status="stale",
         )
-        result = self.refresh(limit=1)
-        refreshed = self.manifest.get(doc_id)
-        return {
-            "ok": result["indexed"] == 1,
-            "doc_id": doc_id,
-            "status": refreshed.status if refreshed else "unknown",
-        }
+
+        try:
+            content = source_path.read_text(encoding="utf-8")
+            self.vector_store.add(
+                doc_id=updated.doc_id,
+                content=content,
+                metadata={
+                    "record_type": updated.record_type,
+                    "path": updated.path,
+                    "doc_version": str(updated.doc_version),
+                },
+            )
+            self.manifest.mark_status(updated.doc_id, "indexed", error=None)
+            return {"ok": True, "doc_id": doc_id, "status": "indexed"}
+        except Exception as exc:  # pragma: no cover - defensive
+            failed = self.manifest.mark_status(updated.doc_id, "failed", error=str(exc))
+            return {"ok": False, "doc_id": doc_id, "status": failed.status, "error": str(exc)}
 
     def status_summary(self) -> dict[str, int]:
         return self.manifest.summary()
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        import hashlib
+
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        return f"sha256:{digest}"

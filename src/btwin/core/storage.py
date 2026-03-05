@@ -8,6 +8,7 @@ from typing import Iterator
 import yaml
 
 from btwin.core.collab_models import CollabRecord
+from btwin.core.document_contracts import validate_document_contract
 from btwin.core.models import Entry
 
 
@@ -43,6 +44,7 @@ class Storage:
         fm = dict(merged_metadata)
         fm["date"] = entry.date
         fm["slug"] = entry.slug
+        self._ensure_contract("entry", fm)
         frontmatter = yaml.dump(fm, default_flow_style=False, allow_unicode=True).strip()
 
         file_path.write_text(f"---\n{frontmatter}\n---\n\n{merged_content}")
@@ -114,6 +116,7 @@ class Storage:
         if topic:
             metadata["topic"] = topic
 
+        self._ensure_contract("convo", metadata)
         frontmatter = yaml.dump(metadata, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
         file_path.write_text(f"---\n{frontmatter}\n---\n\n{content}\n")
         return Entry(date=date, slug=slug, content=content, metadata=metadata)
@@ -137,8 +140,10 @@ class Storage:
         file_path = self._collab_path(record)
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
+        metadata = record.model_dump(by_alias=True, mode="json")
+        self._ensure_contract("collab", metadata)
         frontmatter = yaml.dump(
-            record.model_dump(by_alias=True, mode="json"),
+            metadata,
             default_flow_style=False,
             allow_unicode=True,
             sort_keys=False,
@@ -212,12 +217,14 @@ class Storage:
         date_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = date_dir / f"{item_id}.md"
+        metadata = {
+            "promotionItemId": item_id,
+            "sourceRecordId": source_record_id,
+            "scope": "global",
+        }
+        self._ensure_contract("promoted", metadata)
         frontmatter = yaml.dump(
-            {
-                "promotionItemId": item_id,
-                "sourceRecordId": source_record_id,
-                "scope": "global",
-            },
+            metadata,
             default_flow_style=False,
             allow_unicode=True,
             sort_keys=False,
@@ -342,6 +349,12 @@ class Storage:
         body_lines.append("## Next Action")
         body_lines.extend([f"- {item}" for item in record.next_action])
         return "\n".join(body_lines)
+
+    @staticmethod
+    def _ensure_contract(record_type: str, metadata: dict[str, object]) -> None:
+        ok, reason = validate_document_contract(record_type, metadata)
+        if not ok:
+            raise ValueError(f"invalid {record_type} contract: {reason}")
 
     def _collab_path(self, record: CollabRecord) -> Path:
         day = record.created_at.date().isoformat()
