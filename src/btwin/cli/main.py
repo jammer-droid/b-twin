@@ -375,6 +375,23 @@ def indexer_repair(doc_id: str = typer.Option(..., "--doc-id", help="Document id
     console.print(f"Indexer repair {status} doc_id={doc_id} status={result.get('status')}")
 
 
+@indexer_app.command("kpi")
+def indexer_kpi():
+    """Show sync-gap KPI metrics for indexer health."""
+    from btwin.core.indexer import CoreIndexer
+
+    config = _get_config()
+    idx = CoreIndexer(data_dir=config.data_dir)
+    kpi = idx.kpi_summary()
+    console.print(
+        "Indexer KPI "
+        f"write_to_indexed_latency_ms_avg={kpi.get('write_to_indexed_latency_ms_avg')} "
+        f"manifest_vector_mismatch_count={kpi.get('manifest_vector_mismatch_count')} "
+        f"repair_success_rate={kpi.get('repair_success_rate')} "
+        f"repair_avg_duration_ms={kpi.get('repair_avg_duration_ms')}"
+    )
+
+
 def _effective_runtime_openclaw_path(config: BTwinConfig) -> str | None:
     if config.runtime.mode == "standalone":
         return None

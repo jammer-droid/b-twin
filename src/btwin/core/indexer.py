@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
+
+import yaml
 
 from btwin.core.indexer_manifest import IndexManifest
 from btwin.core.indexer_models import IndexEntry, IndexStatus, RecordType
@@ -16,6 +19,8 @@ class CoreIndexer:
         self.storage = Storage(data_dir)
         self.vector_store = VectorStore(persist_dir=data_dir / "index")
         self.manifest = IndexManifest(data_dir / "index_manifest.yaml")
+        self._kpi_path = data_dir / "indexer_kpi.yaml"
+        self._kpi = self._load_kpi()
 
     def mark_pending(self, *, doc_id: str, path: str, record_type: RecordType, checksum: str) -> IndexEntry:
         existing = self.manifest.get(doc_id)
@@ -27,12 +32,14 @@ class CoreIndexer:
         elif existing is not None:
             status = existing.status
 
+        pending_since = time.time() if status in {"pending", "stale"} else None
         return self.manifest.upsert(
             doc_id=doc_id,
             path=path,
             record_type=record_type,
             checksum=checksum,
             status=status,
+            pending_since=pending_since,
         )
 
     def refresh(self, limit: int | None = None) -> dict[str, int]:
@@ -74,6 +81,7 @@ class CoreIndexer:
                         record_type=item.record_type,
                         checksum=current_checksum,
                         status=item.status,
+                        pending_since=item.pending_since,
                     )
 
                 content = source_path.read_text(encoding="utf-8")
@@ -86,7 +94,12 @@ class CoreIndexer:
                         "doc_version": str(item.doc_version),
                     },
                 )
-                self.manifest.mark_status(item.doc_id, "indexed", error=None)
+                self.manifest.mark_status(item.doc_id, "indexed", error=None, clear_pending_since=True)
+                if item.pending_since is not None:
+                    latency_ms = max(0.0, (time.time() - item.pending_since) * 1000.0)
+                    self._kpi["write_to_indexed_samples"] += 1
+                    self._kpi["write_to_indexed_total_ms"] += latency_ms
+                    self._save_kpi()
                 indexed += 1
             except Exception as exc:  # pragma: no cover - defensive
                 self.manifest.mark_status(item.doc_id, "failed", error=str(exc))
@@ -119,14 +132,19 @@ class CoreIndexer:
         return self.refresh()
 
     def repair(self, doc_id: str) -> dict[str, object]:
+        started = time.perf_counter()
+        self._kpi["repair_attempts"] += 1
+
         item = self.manifest.get(doc_id)
         if item is None:
+            self._record_repair_duration(started)
             return {"ok": False, "error": "not_found", "doc_id": doc_id}
 
         source_path = self.data_dir / item.path
         if not source_path.exists():
             self.vector_store.delete(item.doc_id)
             self.manifest.mark_status(item.doc_id, "deleted", error="repair: source missing")
+            self._record_repair_duration(started)
             return {"ok": False, "error": "source_missing", "doc_id": doc_id, "status": "deleted"}
 
         checksum = self._sha256(source_path)
@@ -136,6 +154,7 @@ class CoreIndexer:
             record_type=item.record_type,
             checksum=checksum,
             status="stale",
+            pending_since=time.time(),
         )
 
         try:
@@ -149,14 +168,71 @@ class CoreIndexer:
                     "doc_version": str(updated.doc_version),
                 },
             )
-            self.manifest.mark_status(updated.doc_id, "indexed", error=None)
+            self.manifest.mark_status(updated.doc_id, "indexed", error=None, clear_pending_since=True)
+            self._kpi["repair_successes"] += 1
+            self._record_repair_duration(started)
             return {"ok": True, "doc_id": doc_id, "status": "indexed"}
         except Exception as exc:  # pragma: no cover - defensive
             failed = self.manifest.mark_status(updated.doc_id, "failed", error=str(exc))
+            self._record_repair_duration(started)
             return {"ok": False, "doc_id": doc_id, "status": failed.status, "error": str(exc)}
+
+    def kpi_summary(self) -> dict[str, float | int | None]:
+        indexed_doc_ids = {item.doc_id for item in self.manifest.list_by_status("indexed")}
+        vector_doc_ids = self.vector_store.list_ids()
+        mismatch_count = len(indexed_doc_ids - vector_doc_ids) + len(vector_doc_ids - indexed_doc_ids)
+
+        latency_avg = None
+        if self._kpi["write_to_indexed_samples"] > 0:
+            latency_avg = self._kpi["write_to_indexed_total_ms"] / self._kpi["write_to_indexed_samples"]
+
+        repair_success_rate = None
+        repair_avg_duration = None
+        if self._kpi["repair_attempts"] > 0:
+            repair_success_rate = self._kpi["repair_successes"] / self._kpi["repair_attempts"]
+            repair_avg_duration = self._kpi["repair_total_duration_ms"] / self._kpi["repair_attempts"]
+
+        return {
+            "write_to_indexed_latency_ms_avg": latency_avg,
+            "manifest_vector_mismatch_count": mismatch_count,
+            "repair_success_rate": repair_success_rate,
+            "repair_avg_duration_ms": repair_avg_duration,
+        }
 
     def status_summary(self) -> dict[str, int]:
         return self.manifest.summary()
+
+    def _load_kpi(self) -> dict[str, float | int]:
+        defaults: dict[str, float | int] = {
+            "write_to_indexed_samples": 0,
+            "write_to_indexed_total_ms": 0.0,
+            "repair_attempts": 0,
+            "repair_successes": 0,
+            "repair_total_duration_ms": 0.0,
+        }
+        if not self._kpi_path.exists():
+            return defaults
+
+        raw = yaml.safe_load(self._kpi_path.read_text()) or {}
+        if not isinstance(raw, dict):
+            return defaults
+
+        merged = defaults.copy()
+        for key in defaults:
+            if key in raw:
+                merged[key] = raw[key]
+        return merged
+
+    def _save_kpi(self) -> None:
+        payload = yaml.dump(self._kpi, allow_unicode=True, sort_keys=False)
+        tmp_path = self._kpi_path.with_suffix(self._kpi_path.suffix + ".tmp")
+        tmp_path.write_text(payload)
+        tmp_path.replace(self._kpi_path)
+
+    def _record_repair_duration(self, started: float) -> None:
+        duration_ms = max(0.0, (time.perf_counter() - started) * 1000.0)
+        self._kpi["repair_total_duration_ms"] += duration_ms
+        self._save_kpi()
 
     @staticmethod
     def _sha256(path: Path) -> str:

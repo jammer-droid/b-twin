@@ -65,3 +65,16 @@ def test_indexer_reconcile_endpoint_runs(tmp_path):
 
     assert res.status_code == 200
     assert "processed" in res.json()
+
+
+def test_indexer_kpi_requires_admin_token_and_returns_metrics(tmp_path):
+    client = _client(tmp_path)
+
+    denied = client.get("/api/indexer/kpi")
+    assert denied.status_code == 403
+
+    ok = client.get("/api/indexer/kpi", headers={"X-Admin-Token": "secret"})
+    assert ok.status_code == 200
+    body = ok.json()
+    assert "manifest_vector_mismatch_count" in body
+    assert "repair_success_rate" in body

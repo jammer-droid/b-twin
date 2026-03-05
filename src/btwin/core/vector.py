@@ -62,3 +62,9 @@ class VectorStore:
     def count(self) -> int:
         """Return the number of documents in the store."""
         return self._collection.count()
+
+    def list_ids(self) -> set[str]:
+        """Return all document ids currently stored in vectors."""
+        result = self._collection.get(include=[])
+        ids = result.get("ids") or []
+        return set(ids)

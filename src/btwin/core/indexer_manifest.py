@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -31,6 +32,7 @@ class IndexManifest:
         status: IndexStatus,
         doc_version: int | None = None,
         error: str | None = None,
+        pending_since: float | None = None,
     ) -> IndexEntry:
         existing = self._entries.get(doc_id)
 
@@ -52,19 +54,33 @@ class IndexManifest:
             status=status,
             doc_version=resolved_version,
             error=error,
+            pending_since=pending_since if pending_since is not None else (existing.pending_since if existing else None),
         )
         self._entries[doc_id] = entry
         self._save_entries()
         return entry.model_copy(deep=True)
 
-    def mark_status(self, doc_id: str, status: IndexStatus, error: str | None = None) -> IndexEntry:
+    def mark_status(
+        self,
+        doc_id: str,
+        status: IndexStatus,
+        error: str | None = None,
+        *,
+        clear_pending_since: bool = False,
+    ) -> IndexEntry:
         if doc_id not in self._entries:
             raise ValueError(f"doc_id '{doc_id}' not found in index manifest")
         entry = self._entries[doc_id]
-        updated = entry.model_copy(update={"status": status, "error": error})
+        payload: dict[str, Any] = {"status": status, "error": error}
+        if clear_pending_since:
+            payload["pending_since"] = None
+        updated = entry.model_copy(update=payload)
         self._entries[doc_id] = updated
         self._save_entries()
         return updated.model_copy(deep=True)
+
+    def list_all(self) -> list[IndexEntry]:
+        return [item.model_copy(deep=True) for item in self._entries.values()]
 
     def list_by_status(self, status: IndexStatus) -> list[IndexEntry]:
         return [item.model_copy(deep=True) for item in self._entries.values() if item.status == status]

@@ -47,3 +47,13 @@ def test_indexer_refresh_command_indexes_pending_doc(tmp_path, monkeypatch):
 
     assert res.exit_code == 0
     assert "indexed=1" in res.output
+
+
+def test_indexer_kpi_command_outputs_metrics(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    res = runner.invoke(app, ["indexer", "kpi"])
+
+    assert res.exit_code == 0
+    assert "mismatch" in res.output.lower()
+    assert "repair_success_rate" in res.output.lower()

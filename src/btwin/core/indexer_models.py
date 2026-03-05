@@ -20,3 +20,4 @@ class IndexEntry(BaseModel):
     status: IndexStatus
     doc_version: int = Field(ge=1)
     error: str | None = None
+    pending_since: float | None = None

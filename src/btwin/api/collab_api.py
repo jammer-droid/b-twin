@@ -1101,6 +1101,13 @@ def create_collab_app(
             return auth_error
         return _indexer().status_summary()
 
+    @app.get("/api/indexer/kpi")
+    def indexer_kpi(x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        auth_error = _require_admin_token_if_configured(x_admin_token)
+        if auth_error is not None:
+            return auth_error
+        return _indexer().kpi_summary()
+
     @app.post("/api/indexer/refresh")
     def indexer_refresh(
         payload: IndexerActionRequest,

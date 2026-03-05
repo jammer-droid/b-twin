@@ -126,3 +126,48 @@ def test_refresh_recomputes_checksum_before_indexing_backlog_doc(tmp_path):
     assert item.status == "indexed"
     assert item.checksum == new_checksum
     assert item.doc_version == 2
+
+
+def test_kpi_summary_reports_sync_gap_and_repair_metrics(tmp_path, monkeypatch):
+    idx = CoreIndexer(data_dir=tmp_path)
+    ok_entry = idx.storage.save_convo_record(content="repair ok", requested_by_user=True)
+    fail_entry = idx.storage.save_convo_record(content="repair fail", requested_by_user=True)
+
+    ok_path = idx.storage.convo_entries_dir / ok_entry.date / f"{ok_entry.slug}.md"
+    fail_path = idx.storage.convo_entries_dir / fail_entry.date / f"{fail_entry.slug}.md"
+    ok_rel = str(ok_path.relative_to(tmp_path))
+    fail_rel = str(fail_path.relative_to(tmp_path))
+
+    idx.mark_pending(doc_id=ok_rel, path=ok_rel, record_type="convo", checksum=_sha256_for(ok_path))
+    idx.mark_pending(doc_id=fail_rel, path=fail_rel, record_type="convo", checksum=_sha256_for(fail_path))
+    idx.refresh(limit=10)
+
+    idx.manifest.mark_status(ok_rel, "failed", error="retry")
+    idx.manifest.mark_status(fail_rel, "failed", error="retry")
+
+    original_add = idx.vector_store.add
+
+    def fail_once(*args, **kwargs):
+        doc_id = kwargs.get("doc_id") if kwargs else None
+        if doc_id is None and args:
+            doc_id = args[0]
+        if doc_id == fail_rel:
+            raise RuntimeError("embedding timeout")
+        return original_add(*args, **kwargs)
+
+    monkeypatch.setattr(idx.vector_store, "add", fail_once)
+
+    ok_result = idx.repair(ok_rel)
+    fail_result = idx.repair(fail_rel)
+
+    assert ok_result["ok"] is True
+    assert fail_result["ok"] is False
+
+    idx.vector_store.delete(ok_rel)
+
+    kpi = idx.kpi_summary()
+
+    assert kpi["manifest_vector_mismatch_count"] >= 1
+    assert kpi["write_to_indexed_latency_ms_avg"] is not None
+    assert kpi["repair_success_rate"] == 0.5
+    assert kpi["repair_avg_duration_ms"] >= 0.0
