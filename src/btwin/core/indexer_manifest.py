@@ -29,16 +29,28 @@ class IndexManifest:
         record_type: RecordType,
         checksum: str,
         status: IndexStatus,
-        doc_version: int,
+        doc_version: int | None = None,
         error: str | None = None,
     ) -> IndexEntry:
+        existing = self._entries.get(doc_id)
+
+        if doc_version is None:
+            if existing is None:
+                resolved_version = 1
+            elif existing.checksum != checksum:
+                resolved_version = existing.doc_version + 1
+            else:
+                resolved_version = existing.doc_version
+        else:
+            resolved_version = doc_version
+
         entry = IndexEntry(
             doc_id=doc_id,
             path=path,
             record_type=record_type,
             checksum=checksum,
             status=status,
-            doc_version=doc_version,
+            doc_version=resolved_version,
             error=error,
         )
         self._entries[doc_id] = entry

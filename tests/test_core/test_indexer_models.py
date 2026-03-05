@@ -1,4 +1,3 @@
-import pytest
 from pydantic import ValidationError
 
 from btwin.core.indexer_models import IndexEntry
@@ -18,7 +17,7 @@ def test_index_entry_requires_core_fields() -> None:
 
 
 def test_index_entry_rejects_invalid_status() -> None:
-    with pytest.raises(ValidationError):
+    try:
         IndexEntry(
             doc_id="x",
             path="x",
@@ -27,3 +26,21 @@ def test_index_entry_rejects_invalid_status() -> None:
             status="bad",
             doc_version=1,
         )
+        assert False
+    except ValidationError:
+        assert True
+
+
+def test_index_entry_rejects_invalid_record_type() -> None:
+    try:
+        IndexEntry(
+            doc_id="x",
+            path="x",
+            record_type="unknown",
+            checksum="sha256:x",
+            status="pending",
+            doc_version=1,
+        )
+        assert False
+    except ValidationError:
+        assert True
