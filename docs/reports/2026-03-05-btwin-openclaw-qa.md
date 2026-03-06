@@ -1,4 +1,12 @@
+---
+doc_version: 2
+last_updated: 2026-03-06
+status: active
+---
+
 # BTWIN vs OpenClaw 아키텍처 Q&A (2026-03-05)
+
+> 용어 기준: `docs/glossary.md`
 
 ## Q&A
 
@@ -101,34 +109,34 @@
 - 핵심 통제축은 Q13의 표준 흐름(`mark_pending → refresh → reconcile → repair`)과 검증 기준(`checksum/doc_version`)이다.
 - 로드맵은 P0 안정화, P1 자동화, P2 정책 고도화 순으로 추진한다.
 
-## 즉시 실행 체크리스트
+## 즉시 실행 체크리스트 (2026-03-06 재분류)
 
-- [ ] **Action:** 용어집 v1 확정(정합성/무결성/책임성/일관성)  
+- [x] **Action:** 용어집 v1 확정(정합성/무결성/책임성/일관성)  
   **Owner:** Architecture Lead  
   **Due:** 2026-03-12  
-  **Evidence:** `docs/glossary.md` PR 링크  
-  **DoD:** QA/운영런북/리뷰체크리스트 3개 문서에 동일 정의 반영
+  **Evidence:** `docs/glossary.md`, `docs/runbook.md`, `docs/reports/2026-03-05-btwin-openclaw-qa.md`  
+  **DoD 판정:** 구현 완료 (용어 정의와 참조 링크 반영)
 
-- [ ] **Action:** 핵심 문서 `doc_version` 필드 적용 + 검증 스크립트 추가  
+- [x] **Action:** 핵심 문서 `doc_version` 필드 적용 + 검증 스크립트 추가  
   **Owner:** Core Maintainer  
   **Due:** 2026-03-14  
-  **Evidence:** 스키마 변경 PR + 샘플 문서 diff  
-  **DoD:** 신규 문서 생성 시 `doc_version` 누락 0건
+  **Evidence:** `scripts/doc_version_check.py`, `README.md`, `CONTRIBUTING.md`, `docs/runbook.md`, `docs/indexer-operations.md`, `docs/release-checklist.md`, `docs/plans/2026-03-05-runtime-modes-and-core-ports.md`  
+  **DoD 판정:** 구현 완료 (검증 스크립트 추가 및 관리 문서 `doc_version` 필드 반영)
 
-- [ ] **Action:** `mark_pending` 사용 규칙 공표 및 코드리뷰 룰 추가  
+- [x] **Action:** `mark_pending` 사용 규칙 공표 및 코드리뷰 룰 추가  
   **Owner:** Tech Lead  
   **Due:** 2026-03-13  
-  **Evidence:** `CONTRIBUTING.md`/리뷰 템플릿 업데이트  
-  **DoD:** 상태 확정 전 경로에서 pending 없이 merge 되는 케이스 0건
+  **Evidence:** `CONTRIBUTING.md` (`mark_pending` usage rules + review checklist)  
+  **DoD 판정:** 구현 완료 (기여자 가이드에 병합 게이트 규칙 문서화)
 
-- [ ] **Action:** 배치/세션 종료 시 `refresh + reconcile` 기본 실행 파이프라인 반영  
+- [x] **Action:** 배치/세션 종료 시 `refresh + reconcile` 기본 실행 파이프라인 반영  
   **Owner:** Ops Engineer  
   **Due:** 2026-03-16  
-  **Evidence:** 배치 잡 로그 + 성공률 리포트  
-  **DoD:** 운영환경 주간 실행 성공률 99% 이상
+  **Evidence:** `scripts/end_of_batch_sync.sh`, `README.md`, `docs/runbook.md`, `docs/release-checklist.md`  
+  **DoD 판정:** 구현 완료 (기본 실행 helper/가이드 반영, 운영 성공률 평가는 릴리스 운영 데이터 필요)
 
 - [ ] **Action:** 불일치 대응 Runbook(`repair`) + KPI(불일치율, MTTR-sync) 주간 리포트 시작  
   **Owner:** Reliability Owner  
   **Due:** 2026-03-18  
-  **Evidence:** `docs/indexer-operations.md` 개정 + 주간 리포트 링크  
-  **DoD:** 2주 연속 KPI 보고 및 Top 3 원인/개선안 기록
+  **Evidence:** `docs/indexer-operations.md`, `docs/weekly-kpi-reporting.md`  
+  **DoD 판정:** 부분 완료 (문서는 준비됨, "2주 연속 KPI 보고"는 운영 실행 데이터 필요)

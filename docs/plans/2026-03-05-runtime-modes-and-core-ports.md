@@ -1,3 +1,9 @@
+---
+doc_version: 2
+last_updated: 2026-03-06
+status: active
+---
+
 # 운영 모드 아키텍처 및 Core Ports 명세 (P0-1)
 
 ## 1) 배경/문제정의
@@ -166,18 +172,18 @@
 4. 리스크: 권한 오남용/정책 오설정
    - 완화: 정책 변경 2인 승인, 변경 전후 diff 감사 의무화
 
-## 11) DoD
-- [ ] 본 문서가 저장소 `docs/plans/2026-03-05-runtime-modes-and-core-ports.md`에 존재
-- [ ] 필수 섹션 11개 모두 포함 및 한국어 작성 완료
-- [ ] Core Ports 최소 4종(Recall/Identity/Approval/Audit) 계약 명시
-- [ ] 모드별 Adapter 매핑표 포함
-- [ ] 동기화 공백 처리 시퀀스 6단계(mark_pending~doc_version) 포함
-- [ ] KPI 목표치 수치화 완료
-- [ ] 단계별(P0/P1/P2) 적용 계획 및 리스크/완화 정의
+## 11) DoD (2026-03-06 재분류)
+- [x] 본 문서가 저장소 `docs/plans/2026-03-05-runtime-modes-and-core-ports.md`에 존재
+- [x] 필수 섹션 11개 모두 포함 및 한국어 작성 완료
+- [x] Core Ports 최소 4종(Recall/Identity/Approval/Audit) 계약 명시
+- [x] 모드별 Adapter 매핑표 포함
+- [x] 동기화 공백 처리 시퀀스 6단계(mark_pending~doc_version) 포함
+- [x] KPI 목표치 수치화 완료
+- [x] 단계별(P0/P1/P2) 적용 계획 및 리스크/완화 정의
 
 ### DoD 증빙 링크/책임자
-| 항목 | 증빙/링크 | Owner | Target Date |
+| 항목 | 증빙/링크 | Owner | Status |
 |---|---|---|---|
-| Port 계약 테스트 템플릿 초안 | `docs/templates/core-port-contract-test-template.md` (작성 예정) | Core Maintainer | 2026-03-12 |
-| P1 착수 승인 로그 | `docs/reports/2026-03-xx-p1-kickoff-approval.md` (작성 예정) | Tech Lead | 2026-03-13 |
-| KPI 소스맵 문서 | `docs/plans/2026-03-xx-kpi-sourcemap.md` (작성 예정) | Reliability Owner | 2026-03-14 |
+| Core Ports 계약/구현 증빙 | `src/btwin/core/runtime_ports.py`, `src/btwin/core/runtime_adapters.py`, `tests/test_core/test_runtime_ports.py`, `tests/test_core/test_runtime_adapters.py` | Core Maintainer | 완료 |
+| 동기화 공백 시퀀스 운영 문서 | `docs/indexer-operations.md`, `docs/runbook.md` | Ops Engineer | 완료 |
+| KPI 기준/주간 보고 절차 | `docs/weekly-kpi-reporting.md` | Reliability Owner | 완료(절차), 운영 데이터 집계는 별도 |
