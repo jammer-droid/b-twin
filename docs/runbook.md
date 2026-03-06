@@ -35,5 +35,31 @@ status: active
 - `indexerStatus.stale == 0` (or temporary known backlog)
 - No new critical `gate_rejected` events in latest 30 min
 
+## 프로젝트별 운영
+
+### D. 프로젝트별 인덱서 상태 확인
+```bash
+# CLI
+btwin indexer status                          # 전체
+
+# HTTP API
+GET /api/indexer/status?projectId=myproj      # 프로젝트별
+GET /api/ops/dashboard?projectId=myproj       # 대시보드 (프로젝트 필터)
+```
+
+### E. 프로젝트 간 데이터 검색
+- MCP proxy 경유 시 `scope`는 기본 `"project"` (해당 프로젝트만 검색)
+- 전체 검색이 필요하면 HTTP API에서 `scope: "all"` 사용:
+```json
+POST /api/mcp/search
+{"query": "keyword", "scope": "all"}
+```
+
+### F. 마이그레이션 후 reconcile
+1. 마이그레이션 스크립트 실행: `python scripts/migrate_to_project_layout.py`
+2. 인덱스 재조정: `btwin indexer reconcile`
+3. 벡터 갱신: `btwin indexer refresh`
+4. 상태 확인: `btwin indexer status` — `failed == 0`, `stale == 0` 검증
+
 ## Escalation
 - If recovery loop fails 2 times, freeze write operations and escalate to maintainer.
