@@ -28,6 +28,8 @@ from btwin.core.promotion_store import (
     PromotionTransitionError,
 )
 from btwin.core.promotion_worker import PromotionWorker
+from btwin.core.runtime_adapters import OpenClawMemoryInterface, build_runtime_adapters
+from btwin.core.runtime_ports import AuditEvent
 from btwin.core.storage import Storage
 
 
@@ -99,19 +101,30 @@ class IndexerActionRequest(BaseModel):
 def create_collab_app(
     data_dir: Path,
     *,
+    runtime_mode: str = "attached",
     initial_agents: set[str] | None = None,
     extra_agents: set[str] | None = None,
     openclaw_config_path: str | None = None,
+    openclaw_memory: OpenClawMemoryInterface | None = None,
     admin_token: str | None = None,
 ) -> FastAPI:
     app = FastAPI(title="B-TWIN Collab API", version="0.1")
     storage = Storage(data_dir)
     promotion_store = PromotionStore(data_dir / "promotion_queue.yaml")
     audit_logger = AuditLogger(data_dir / "audit.log.jsonl")
+    if runtime_mode == "standalone" and initial_agents is None:
+        initial_agents = {"main"}
+
     registry = AgentRegistry(
         config_path=Path(openclaw_config_path).expanduser() if openclaw_config_path else None,
         extra_agents=extra_agents,
         initial_agents=initial_agents,
+    )
+    runtime_adapters = build_runtime_adapters(
+        mode=runtime_mode,
+        data_dir=data_dir,
+        audit_logger=audit_logger,
+        openclaw_memory=openclaw_memory,
     )
     _IDEMPOTENCY_CACHE_MAX = 1000
     idempotency_cache: OrderedDict[str, dict[str, str]] = OrderedDict()
@@ -120,7 +133,16 @@ def create_collab_app(
         return f"trc_{uuid4().hex[:12]}"
 
     def _audit(event_type: str, payload: dict[str, object]) -> None:
-        audit_logger.log(event_type=event_type, payload=payload)
+        runtime_adapters.audit.append(
+            AuditEvent(
+                event_type=event_type,
+                actor=str(payload.get("actorAgent") or payload.get("actor") or "system"),
+                trace_id=_trace_id(),
+                doc_version=int(payload.get("docVersion") or 0),
+                checksum=str(payload.get("checksum") or "n/a"),
+                payload=payload,
+            )
+        )
 
     def _indexer() -> CoreIndexer:
         return CoreIndexer(data_dir=data_dir)
@@ -1161,6 +1183,42 @@ def create_collab_app(
             return auth_error
         return _indexer().kpi_summary()
 
+    @app.get("/api/ops/dashboard")
+    def ops_dashboard(x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        auth_error = _require_admin_token_if_configured(x_admin_token)
+        if auth_error is not None:
+            return auth_error
+
+        idx = _indexer()
+        gate_violations = [
+            row
+            for row in audit_logger.tail(limit=200)
+            if row.get("eventType") == "gate_rejected"
+        ]
+        return {
+            "runtime": {"mode": runtime_mode, "attached": runtime_mode == "attached"},
+            "indexerStatus": idx.status_summary(),
+            "failureQueue": idx.failure_queue(),
+            "repairHistory": idx.repair_history(limit=20),
+            "gateViolations": gate_violations[-20:],
+        }
+
+    @app.get("/ops")
+    def ops_dashboard_ui():
+        return HTMLResponse(
+            """
+<!doctype html><html><head><meta charset='utf-8'><title>B-TWIN Ops</title></head>
+<body><h1>B-TWIN Ops Dashboard</h1><pre id='out'>loading...</pre>
+<script>
+fetch('/api/ops/dashboard').then(r => r.json()).then(d => {
+  document.getElementById('out').textContent = JSON.stringify(d, null, 2);
+}).catch(err => {
+  document.getElementById('out').textContent = 'failed: ' + String(err);
+});
+</script></body></html>
+            """
+        )
+
     @app.post("/api/indexer/refresh")
     def indexer_refresh(
         payload: IndexerActionRequest,
@@ -1276,6 +1334,7 @@ def create_default_collab_app() -> FastAPI:
 
     return create_collab_app(
         data_dir=config.data_dir,
+        runtime_mode=config.runtime.mode,
         extra_agents=extra_agents,
         openclaw_config_path=_resolve_runtime_openclaw_path(config),
         admin_token=os.environ.get("BTWIN_ADMIN_TOKEN"),

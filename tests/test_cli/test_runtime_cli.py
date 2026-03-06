@@ -19,6 +19,7 @@ def test_runtime_show_defaults(tmp_path, monkeypatch):
     assert "Runtime mode: attached" in result.stdout
     assert "Configured OpenClaw config path: -" in result.stdout
     assert "Effective OpenClaw config path: -" in result.stdout
+    assert "Recall adapter: openclaw" in result.stdout
 
 
 def test_runtime_show_reads_config_and_env_precedence_in_attached_mode(tmp_path, monkeypatch):
@@ -44,6 +45,7 @@ def test_runtime_show_reads_config_and_env_precedence_in_attached_mode(tmp_path,
     assert "Runtime mode: attached" in result.stdout
     assert "Configured OpenClaw config path: ~/.openclaw/custom.toml" in result.stdout
     assert "Effective OpenClaw config path: /tmp/from-env.toml" in result.stdout
+    assert "Recall adapter: openclaw" in result.stdout
 
 
 def test_runtime_show_standalone_mode_effective_path_is_disabled(tmp_path, monkeypatch):
@@ -69,3 +71,4 @@ def test_runtime_show_standalone_mode_effective_path_is_disabled(tmp_path, monke
     assert "Runtime mode: standalone" in result.stdout
     assert "Configured OpenClaw config path: ~/.openclaw/custom.toml" in result.stdout
     assert "Effective OpenClaw config path: -" in result.stdout
+    assert "Recall adapter: standalone-journal" in result.stdout
