@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, Request
+from fastapi import APIRouter, FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -183,6 +183,22 @@ def create_collab_app(
     _IDEMPOTENCY_CACHE_MAX = 1000
     idempotency_cache: OrderedDict[str, dict[str, str]] = OrderedDict()
 
+    def _foundation_router(scope: str) -> APIRouter:
+        router = APIRouter(prefix=f"/api/{scope}", tags=[f"foundation:{scope}"])
+
+        @router.get("/health")
+        def foundation_health():
+            return {
+                "ok": True,
+                "scope": scope,
+                "status": "available",
+            }
+
+        return router
+
+    for foundation_scope in ("workflows", "entries", "sources"):
+        app.include_router(_foundation_router(foundation_scope))
+
     def _trace_id() -> str:
         return f"trc_{uuid4().hex[:12]}"
 
@@ -314,6 +330,97 @@ def create_collab_app(
             "INVALID_SCHEMA",
             "request validation failed",
             {"issues": exc.errors()},
+        )
+
+    def _foundation_ui_shell_html() -> str:
+        return """
+<!doctype html>
+<html lang=\"ko\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>B-TWIN Shared Shell</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; color: #0f172a; }
+    h1 { margin: 0 0 8px; }
+    p { color: #475569; }
+    nav { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
+    a { color: #0f172a; text-decoration: none; border: 1px solid #cbd5e1; border-radius: 999px; padding: 8px 12px; }
+    a:hover { background: #f8fafc; }
+    .panel { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; background: #fff; }
+    ul { margin: 12px 0 0; padding-left: 20px; color: #475569; }
+  </style>
+</head>
+<body>
+  <h1>B-TWIN shared shell</h1>
+  <p>Minimal foundation navigation for workflow and dashboard features.</p>
+  <nav aria-label=\"foundation\">
+    <a href=\"/ui/workflows\">workflows</a>
+    <a href=\"/ui/entries\">entries</a>
+    <a href=\"/ui/sources\">sources</a>
+    <a href=\"/ui/summary\">summary</a>
+    <a href=\"/ops\">ops</a>
+  </nav>
+  <section class=\"panel\">
+    <strong>shared shell only</strong>
+    <ul>
+      <li>feature pages can plug in behind these routes later</li>
+      <li>existing entries and ops screens remain available</li>
+      <li>workflows, sources, and summary stay intentionally lightweight for now</li>
+    </ul>
+  </section>
+</body>
+</html>
+        """
+
+    @app.get("/ui", response_class=HTMLResponse)
+    def foundation_ui_shell() -> str:
+        return _foundation_ui_shell_html()
+
+    def _placeholder_ui_html(title: str, description: str) -> str:
+        return f"""
+<!doctype html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>{title}</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; color: #0f172a; }}
+    .panel {{ max-width: 720px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }}
+    a {{ color: #0f172a; }}
+    p {{ color: #475569; }}
+  </style>
+</head>
+<body>
+  <div class=\"panel\">
+    <h1>{title}</h1>
+    <p>{description}</p>
+    <p><a href=\"/ui\">Back to shared shell</a></p>
+  </div>
+</body>
+</html>
+        """
+
+    @app.get("/ui/workflows", response_class=HTMLResponse)
+    def workflows_ui_placeholder() -> str:
+        return _placeholder_ui_html(
+            "Workflows",
+            "Workflow orchestration UI placeholder for the common foundation shell.",
+        )
+
+    @app.get("/ui/sources", response_class=HTMLResponse)
+    def sources_ui_placeholder() -> str:
+        return _placeholder_ui_html(
+            "Sources",
+            "Source inventory UI placeholder for the common foundation shell.",
+        )
+
+    @app.get("/ui/summary", response_class=HTMLResponse)
+    def summary_ui_placeholder() -> str:
+        return _placeholder_ui_html(
+            "Summary",
+            "Summary UI placeholder for the common foundation shell.",
         )
 
     def _ui_html() -> str:

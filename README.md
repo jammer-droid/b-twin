@@ -137,6 +137,28 @@ HTTP admin endpoints:
 
 Detailed runbook: `docs/indexer-operations.md`
 
+## Common Foundation MVP (workflow + dashboard base)
+
+This repo now includes the shared foundation that future workflow orchestration and dashboard work can build on:
+
+- deterministic shared-record storage under `entries/shared/<namespace>/<YYYY-MM-DD>/<record_id>.md`
+- indexer compatibility for shared workflow documents
+- foundation API route groups:
+  - `GET /api/workflows/health`
+  - `GET /api/entries/health`
+  - `GET /api/sources/health`
+- shared UI shell at `GET /ui` with navigation to workflows / entries / sources / summary / ops
+- documented persisted-state recovery contract for future workflow resume logic
+
+To run the HTTP API locally:
+
+```bash
+uv run btwin serve-api
+```
+
+Verification / handoff guide:
+- `docs/reports/2026-03-06-common-foundation-test-guide.md`
+
 ## Entry Format
 
 Entries are stored as markdown files with YAML frontmatter:
