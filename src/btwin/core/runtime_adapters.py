@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import math
 from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
 from btwin.core.audit import AuditLogger
 from btwin.core.runtime_ports import AuditEvent, AuditPort, MemoryEntry, MemoryRef, RecallPort, RecallQuery, RecallResult, VerificationReport
@@ -24,6 +26,23 @@ class OpenClawMemoryInterface(Protocol):
         source: str,
         timestamp: datetime,
     ) -> dict[str, object]: ...
+
+
+
+def _coerce_float(value: object, *, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if math.isfinite(parsed) else default
+
+
+
+def _coerce_int(value: object, *, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 @dataclass(slots=True)
@@ -61,7 +80,7 @@ class StandaloneRecallAdapter(RecallPort):
                     summary=content[:160],
                     source=str(row.get("source", "standalone")),
                     confidence=0.5,
-                    version=int(row.get("doc_version", 1)),
+                    version=_coerce_int(row.get("doc_version"), default=1),
                     metadata={"tags": row.get("tags", [])},
                 )
             )
@@ -77,7 +96,6 @@ class StandaloneRecallAdapter(RecallPort):
         timestamp: datetime | None = None,
     ) -> MemoryRef:
         import json
-        from uuid import uuid4
 
         record_id = f"mem_{uuid4().hex[:12]}"
         payload = {
@@ -104,13 +122,17 @@ class OpenClawRecallAdapter(RecallPort):
             record_id = str(row.get("record_id") or row.get("id") or "")
             if not record_id:
                 continue
+
+            confidence = _coerce_float(row.get("confidence"), default=0.0)
+            version = _coerce_int(row.get("version") or row.get("doc_version"), default=1)
+
             results.append(
                 RecallResult(
                     record_id=record_id,
                     summary=str(row.get("summary") or row.get("content") or ""),
                     source=str(row.get("source") or "openclaw"),
-                    confidence=float(row.get("confidence") or 0.0),
-                    version=int(row.get("version") or row.get("doc_version") or 1),
+                    confidence=confidence,
+                    version=version,
                     metadata={"raw": row},
                 )
             )
@@ -130,7 +152,9 @@ class OpenClawRecallAdapter(RecallPort):
             timestamp=timestamp or datetime.now(UTC),
         )
         record_id = str(row.get("record_id") or row.get("id") or "")
-        version = int(row.get("doc_version") or row.get("version") or entry.doc_version)
+        if not record_id:
+            record_id = f"mem_{uuid4().hex[:12]}"
+        version = _coerce_int(row.get("doc_version") or row.get("version"), default=entry.doc_version)
         return MemoryRef(record_id=record_id, doc_version=version)
 
 
@@ -198,6 +222,9 @@ class RuntimeAuditAdapter(AuditPort):
 class RuntimeAdapters:
     recall: RecallPort
     audit: RuntimeAuditAdapter
+    recall_backend: str
+    degraded: bool = False
+    degraded_reason: str | None = None
 
 
 def build_runtime_adapters(
@@ -207,10 +234,26 @@ def build_runtime_adapters(
     audit_logger: AuditLogger,
     openclaw_memory: OpenClawMemoryInterface | None = None,
 ) -> RuntimeAdapters:
+    degraded = False
+    degraded_reason: str | None = None
+
     if mode == "attached" and openclaw_memory is not None:
         recall: RecallPort = OpenClawRecallAdapter(memory=openclaw_memory)
+        recall_backend = "openclaw"
+    elif mode == "attached":
+        recall = StandaloneRecallAdapter(journal_path=data_dir / "memory_journal.jsonl")
+        recall_backend = "standalone-journal"
+        degraded = True
+        degraded_reason = "attached mode requested but openclaw memory binding is unavailable"
     else:
         recall = StandaloneRecallAdapter(journal_path=data_dir / "memory_journal.jsonl")
+        recall_backend = "standalone-journal"
 
     audit = RuntimeAuditAdapter(logger=audit_logger, mode=mode)
-    return RuntimeAdapters(recall=recall, audit=audit)
+    return RuntimeAdapters(
+        recall=recall,
+        audit=audit,
+        recall_backend=recall_backend,
+        degraded=degraded,
+        degraded_reason=degraded_reason,
+    )

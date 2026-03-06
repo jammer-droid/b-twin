@@ -29,8 +29,26 @@ def test_ops_dashboard_exposes_required_sections(tmp_path):
     assert "repairHistory" in body
     assert "gateViolations" in body
     assert body["runtime"]["mode"] == "standalone"
+    assert body["runtime"]["recallAdapter"] == "standalone-journal"
+    assert body["runtime"]["degraded"] is False
+    assert body["runtime"]["degradedReason"] is None
     assert len(body["repairHistory"]) == 1
     assert len(body["gateViolations"]) == 1
+
+
+def test_ops_dashboard_marks_attached_mode_degraded_without_openclaw_binding(tmp_path):
+    app = create_collab_app(data_dir=tmp_path, runtime_mode="attached", initial_agents={"main"})
+    client = TestClient(app)
+
+    res = client.get("/api/ops/dashboard")
+    assert res.status_code == 200
+    body = res.json()
+
+    assert body["runtime"]["mode"] == "attached"
+    assert body["runtime"]["attached"] is True
+    assert body["runtime"]["recallAdapter"] == "standalone-journal"
+    assert body["runtime"]["degraded"] is True
+    assert "openclaw memory binding" in body["runtime"]["degradedReason"]
 
 
 def test_standalone_runtime_allows_core_flow_without_openclaw_config(tmp_path):
@@ -62,3 +80,5 @@ def test_ops_dashboard_ui_surface(tmp_path):
     res = client.get("/ops")
     assert res.status_code == 200
     assert "B-TWIN Ops Dashboard" in res.text
+    assert "Admin token (optional)" in res.text
+    assert "X-Admin-Token" in res.text

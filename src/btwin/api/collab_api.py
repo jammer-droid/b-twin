@@ -1196,7 +1196,13 @@ def create_collab_app(
             if row.get("eventType") == "gate_rejected"
         ]
         return {
-            "runtime": {"mode": runtime_mode, "attached": runtime_mode == "attached"},
+            "runtime": {
+                "mode": runtime_mode,
+                "attached": runtime_mode == "attached",
+                "recallAdapter": runtime_adapters.recall_backend,
+                "degraded": runtime_adapters.degraded,
+                "degradedReason": runtime_adapters.degraded_reason,
+            },
             "indexerStatus": idx.status_summary(),
             "failureQueue": idx.failure_queue(),
             "repairHistory": idx.repair_history(limit=20),
@@ -1208,14 +1214,33 @@ def create_collab_app(
         return HTMLResponse(
             """
 <!doctype html><html><head><meta charset='utf-8'><title>B-TWIN Ops</title></head>
-<body><h1>B-TWIN Ops Dashboard</h1><pre id='out'>loading...</pre>
+<body>
+<h1>B-TWIN Ops Dashboard</h1>
+<label for='admin-token'>Admin token (optional)</label>
+<input id='admin-token' type='password' placeholder='X-Admin-Token' />
+<button id='load-btn' type='button'>Load</button>
+<pre id='out'>loading...</pre>
 <script>
-fetch('/api/ops/dashboard').then(r => r.json()).then(d => {
-  document.getElementById('out').textContent = JSON.stringify(d, null, 2);
-}).catch(err => {
-  document.getElementById('out').textContent = 'failed: ' + String(err);
-});
-</script></body></html>
+async function loadDashboard() {
+  const token = document.getElementById('admin-token').value.trim();
+  const headers = token ? {'X-Admin-Token': token} : {};
+  try {
+    const res = await fetch('/api/ops/dashboard', {headers});
+    const body = await res.json();
+    if (!res.ok) {
+      document.getElementById('out').textContent = 'failed (' + res.status + '): ' + JSON.stringify(body, null, 2);
+      return;
+    }
+    document.getElementById('out').textContent = JSON.stringify(body, null, 2);
+  } catch (err) {
+    document.getElementById('out').textContent = 'failed: ' + String(err);
+  }
+}
+
+document.getElementById('load-btn').addEventListener('click', loadDashboard);
+loadDashboard();
+</script>
+</body></html>
             """
         )
 

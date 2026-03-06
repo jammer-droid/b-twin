@@ -84,6 +84,14 @@ Unified ops view containing:
 - `repairHistory`
 - `gateViolations`
 - `runtime.mode`
+- `runtime.recallAdapter`
+- `runtime.degraded`
+- `runtime.degradedReason`
+
+### GET `/ops`
+
+Simple browser UI for the dashboard.
+- If admin token is configured, enter token in the UI (`X-Admin-Token`) and click **Load**.
 
 ### POST `/api/indexer/refresh`
 

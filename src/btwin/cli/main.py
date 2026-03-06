@@ -415,8 +415,11 @@ def runtime_show():
     console.print(f"Runtime mode: {config.runtime.mode}")
     console.print(f"Configured OpenClaw config path: {configured_openclaw_path if configured_openclaw_path else '-'}")
     console.print(f"Effective OpenClaw config path: {effective_openclaw_path if effective_openclaw_path else '-'}")
-    recall_adapter = "openclaw" if config.runtime.mode == "attached" else "standalone-journal"
-    console.print(f"Recall adapter: {recall_adapter}")
+    if config.runtime.mode == "attached":
+        console.print("Recall adapter target: openclaw")
+        console.print("Attached fallback behavior: standalone-journal if OpenClaw memory binding is unavailable")
+    else:
+        console.print("Recall adapter target: standalone-journal")
 
 
 if __name__ == "__main__":

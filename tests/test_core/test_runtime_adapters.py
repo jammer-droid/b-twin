@@ -54,6 +54,42 @@ def test_standalone_recall_adapter_works_without_openclaw(tmp_path) -> None:
     assert results[0].version == 5
 
 
+def test_attached_adapter_marks_degraded_when_openclaw_memory_unavailable(tmp_path) -> None:
+    adapters = build_runtime_adapters(
+        mode="attached",
+        data_dir=tmp_path,
+        audit_logger=AuditLogger(tmp_path / "audit.log.jsonl"),
+        openclaw_memory=None,
+    )
+
+    assert isinstance(adapters.recall, StandaloneRecallAdapter)
+    assert adapters.recall_backend == "standalone-journal"
+    assert adapters.degraded is True
+    assert adapters.degraded_reason is not None
+
+
+def test_openclaw_recall_adapter_tolerates_malformed_numeric_fields() -> None:
+    class MalformedMemory(DummyOpenClawMemory):
+        def memory_search(self, *, query: str, scope: str, limit: int) -> list[dict[str, object]]:
+            _ = query, scope, limit
+            return [{"record_id": "bad-1", "content": "hello", "confidence": "bad", "version": "oops"}]
+
+        def memory_remember(self, *, content: str, tags: list[str], source: str, timestamp: datetime) -> dict[str, object]:
+            _ = content, tags, source, timestamp
+            return {"id": "", "doc_version": "broken"}
+
+    adapter = OpenClawRecallAdapter(memory=MalformedMemory())
+    rows = adapter.recall(RecallQuery(query="hello", limit=3))
+
+    assert len(rows) == 1
+    assert rows[0].confidence == 0.0
+    assert rows[0].version == 1
+
+    remembered = adapter.remember(MemoryEntry(content="x", doc_version=7))
+    assert remembered.doc_version == 7
+    assert remembered.record_id.startswith("mem_")
+
+
 def test_attached_audit_event_uses_runtime_envelope(tmp_path) -> None:
     adapters = build_runtime_adapters(
         mode="attached",
