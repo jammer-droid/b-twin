@@ -115,6 +115,29 @@ def test_search(tmp_path):
     assert len(results) >= 1
 
 
+def test_search_supports_hybrid_tuning_args(tmp_path):
+    twin, _ = make_btwin(tmp_path)
+    with patch.object(twin.vector_store, "search", return_value=[]) as mock_search:
+        twin.search(
+            "query",
+            n_results=7,
+            hybrid=False,
+            lexical_weight=0.1,
+            recency_half_life_days=10,
+            mmr_lambda=0.5,
+        )
+
+    mock_search.assert_called_once_with(
+        "query",
+        n_results=7,
+        metadata_filters=None,
+        hybrid=False,
+        lexical_weight=0.1,
+        recency_half_life_days=10,
+        mmr_lambda=0.5,
+    )
+
+
 # --- record ---
 
 def test_record(tmp_path):

@@ -124,9 +124,22 @@ class BTwin:
         query: str,
         n_results: int = 5,
         filters: dict[str, str] | None = None,
+        *,
+        hybrid: bool = True,
+        lexical_weight: float = 0.4,
+        recency_half_life_days: float = 30.0,
+        mmr_lambda: float = 0.75,
     ) -> list[dict]:
         """Search past entries by semantic similarity with optional metadata filters."""
-        return self.vector_store.search(query, n_results=n_results, metadata_filters=filters)
+        return self.vector_store.search(
+            query,
+            n_results=n_results,
+            metadata_filters=filters,
+            hybrid=hybrid,
+            lexical_weight=lexical_weight,
+            recency_half_life_days=recency_half_life_days,
+            mmr_lambda=mmr_lambda,
+        )
 
     def record_convo(self, content: str, requested_by_user: bool = False, topic: str | None = None) -> dict:
         """Record explicit user conversation memory under convo namespace."""
