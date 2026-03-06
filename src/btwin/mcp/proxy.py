@@ -53,11 +53,10 @@ def _get(path: str, params: dict | None = None) -> dict:
     return resp.json()
 
 
-def _inject_project(data: dict) -> dict:
-    """Return a copy of *data* with projectId injected (if configured)."""
+def _inject_project(data: dict) -> None:
+    """Inject projectId into *data* in-place (if configured)."""
     if _project:
         data["projectId"] = _project
-    return data
 
 
 # ---------------------------------------------------------------------------
