@@ -1,3 +1,5 @@
+doc_version: 1
+
 # B-TWIN
 
 A data-only MCP server that stores, searches, and manages personal records.
@@ -101,6 +103,13 @@ btwin indexer reconcile
 btwin indexer repair --doc-id <doc-id>
 ```
 
+Default end-of-batch sync helper (`refresh + reconcile` pipeline):
+
+```bash
+./scripts/end_of_batch_sync.sh        # default limit=200
+./scripts/end_of_batch_sync.sh 500    # custom refresh limit
+```
+
 HTTP admin endpoints:
 
 - `GET /api/indexer/status`
@@ -147,6 +156,9 @@ uv sync
 
 # Run tests
 uv run --python 3.13 pytest -q
+
+# Verify managed docs include doc_version
+python scripts/doc_version_check.py
 
 # Start MCP server manually
 uv run btwin serve

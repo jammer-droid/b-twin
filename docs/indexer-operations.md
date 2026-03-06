@@ -1,4 +1,12 @@
+---
+doc_version: 1
+last_updated: 2026-03-06
+status: active
+---
+
 # Indexer Operations (VS6)
+
+> 용어 기준: `docs/glossary.md`
 
 B-TWIN VS6 introduces a core indexer that keeps markdown source documents and Chroma vector index consistent.
 
@@ -163,5 +171,6 @@ btwin indexer reconcile
 ## Operational Recommendation
 
 - Daily/periodic: `btwin indexer status`
-- On deployment/migration: `btwin indexer reconcile`
+- End-of-batch/session: `./scripts/end_of_batch_sync.sh` (default limit=200)
+- On deployment/migration: `./scripts/end_of_batch_sync.sh 500`
 - Incident recovery: `btwin indexer repair --doc-id ...` then `status`

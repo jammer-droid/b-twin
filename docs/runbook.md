@@ -1,4 +1,12 @@
+---
+doc_version: 1
+last_updated: 2026-03-06
+status: active
+---
+
 # B-TWIN Operations Runbook (P3)
+
+> 용어 기준: `docs/glossary.md`
 
 ## Incident triage order
 1. Check dashboard: `GET /api/ops/dashboard`
@@ -8,9 +16,9 @@
 ## Common incidents
 
 ### A. Failure queue growth (`failed`/`stale`)
-1. `btwin indexer reconcile`
-2. `btwin indexer refresh --limit 500`
-3. Repair top offenders from `failureQueue`
+1. `./scripts/end_of_batch_sync.sh 500`
+2. Repair top offenders from `failureQueue`
+3. Re-check with `btwin indexer status`
 
 ### B. Gate rejection spike
 1. Inspect recent `gateViolations`
