@@ -6,8 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 
 def _run_script(script: str, args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -116,3 +117,35 @@ def test_generate_weekly_kpi_report_from_logs(tmp_path: Path):
     assert "batch success rate" in body
     assert "Top incident notes" in body
     assert "Actions for next week" in body
+
+
+def test_count_gate_violations_uses_bounded_tail(tmp_path: Path):
+    """_count_gate_violations reads only the last 200 audit entries, not the entire file."""
+    from collect_kpi_snapshot import _count_gate_violations
+
+    audit_path = tmp_path / "audit.log.jsonl"
+
+    # Write 210 lines: 205 gate_rejected + 5 other events
+    lines = []
+    for i in range(205):
+        lines.append(json.dumps({"eventType": "gate_rejected", "timestamp": f"2026-03-01T00:{i:04d}"}))
+    for i in range(5):
+        lines.append(json.dumps({"eventType": "indexer_refresh", "timestamp": f"2026-03-01T01:{i:04d}"}))
+    audit_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    count = _count_gate_violations(audit_path)
+
+    # With bounded tail(limit=200), we only see the last 200 lines.
+    # Last 200 lines = 5 indexer_refresh + 195 gate_rejected (from the end)
+    # So count should be less than 205 (the total gate_rejected in the file)
+    assert count < 205
+    # The last 200 lines contain 195 gate_rejected events
+    assert count == 195
+
+
+def test_count_gate_violations_returns_zero_for_missing_file(tmp_path: Path):
+    """_count_gate_violations returns 0 when audit file does not exist."""
+    from collect_kpi_snapshot import _count_gate_violations
+
+    missing = tmp_path / "nonexistent.jsonl"
+    assert _count_gate_violations(missing) == 0

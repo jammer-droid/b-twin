@@ -263,8 +263,11 @@ class CoreIndexer:
     def status_summary(self) -> dict[str, int]:
         return self.manifest.summary()
 
-    def failure_queue(self) -> list[dict[str, object]]:
+    def failure_queue(self, limit: int = 50) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
         items = self.manifest.list_by_status("failed") + self.manifest.list_by_status("stale")
+        items = items[:limit]
         return [
             {
                 "doc_id": item.doc_id,

@@ -1216,7 +1216,7 @@ def create_collab_app(
                 "degradedReason": runtime_adapters.degraded_reason,
             },
             "indexerStatus": idx.status_summary(),
-            "failureQueue": idx.failure_queue(),
+            "failureQueue": idx.failure_queue(limit=50),
             "repairHistory": idx.repair_history(limit=20),
             "gateViolations": gate_violations[-20:],
         }

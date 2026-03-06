@@ -284,3 +284,35 @@ def test_kpi_summary_reports_sync_gap_and_repair_metrics(tmp_path, monkeypatch):
     assert kpi["write_to_indexed_latency_ms_avg"] is not None
     assert kpi["repair_success_rate"] == 0.5
     assert kpi["repair_avg_duration_ms"] >= 0.0
+
+
+def test_failure_queue_respects_limit(tmp_path):
+    """failure_queue(limit=N) returns at most N items."""
+    idx = CoreIndexer(data_dir=tmp_path)
+
+    # Create several entries and mark them all as failed
+    rels: list[str] = []
+    for i in range(5):
+        entry = idx.storage.save_convo_record(content=f"fail {i}", requested_by_user=True)
+        file_path = idx.storage.convo_entries_dir / entry.date / f"{entry.slug}.md"
+        rel = str(file_path.relative_to(tmp_path))
+        idx.mark_pending(
+            doc_id=rel,
+            path=rel,
+            record_type="convo",
+            checksum=_sha256_for(file_path),
+        )
+        idx.manifest.mark_status(rel, "failed", error=f"error {i}")
+        rels.append(rel)
+
+    # Without limit, all 5 should be returned
+    all_items = idx.failure_queue()
+    assert len(all_items) == 5
+
+    # With limit=3, only 3 should be returned
+    limited = idx.failure_queue(limit=3)
+    assert len(limited) == 3
+
+    # With limit=0, nothing returned
+    empty = idx.failure_queue(limit=0)
+    assert len(empty) == 0

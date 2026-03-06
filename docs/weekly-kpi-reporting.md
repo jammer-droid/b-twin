@@ -1,3 +1,7 @@
+---
+doc_version: 1
+---
+
 # Weekly KPI Reporting Procedure (P3)
 
 ## Schedule

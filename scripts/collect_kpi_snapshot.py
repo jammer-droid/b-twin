@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from btwin.config import resolve_data_dir
+from btwin.core.audit import AuditLogger
 from btwin.core.indexer import CoreIndexer
 
 
@@ -34,20 +35,16 @@ def _parse_timestamp(value: str | None) -> datetime:
 
 
 def _count_gate_violations(audit_path: Path) -> int:
+    """Count gate_rejected events in the last 200 audit log entries.
+
+    Uses a bounded tail read to match the ops dashboard's windowed counting.
+    """
     if not audit_path.exists():
         return 0
 
-    count = 0
-    for line in audit_path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if row.get("eventType") == "gate_rejected":
-            count += 1
-    return count
+    logger = AuditLogger(file_path=audit_path)
+    rows = logger.tail(limit=200)
+    return sum(1 for row in rows if row.get("eventType") == "gate_rejected")
 
 
 def main() -> int:

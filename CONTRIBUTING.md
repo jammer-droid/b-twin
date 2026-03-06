@@ -1,4 +1,6 @@
+---
 doc_version: 1
+---
 
 # Contributing to B-TWIN
 
