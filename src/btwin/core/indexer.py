@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import math
 import time
 
 import yaml
@@ -231,7 +232,8 @@ class CoreIndexer:
                 if isinstance(default_value, int):
                     merged[key] = int(value)
                 else:
-                    merged[key] = float(value)
+                    parsed = float(value)
+                    merged[key] = parsed if math.isfinite(parsed) else default_value
             except (TypeError, ValueError):
                 merged[key] = default_value
         return merged

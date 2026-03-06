@@ -154,6 +154,31 @@ def test_kpi_summary_ignores_malformed_kpi_values(tmp_path):
     assert kpi["repair_avg_duration_ms"] is None
 
 
+def test_kpi_summary_ignores_non_finite_kpi_float_values(tmp_path):
+    kpi_path = tmp_path / "indexer_kpi.yaml"
+    kpi_path.write_text(
+        "\n".join(
+            [
+                "write_to_indexed_samples: 1",
+                "write_to_indexed_total_ms: .nan",
+                "repair_attempts: 1",
+                "repair_successes: 1",
+                "repair_total_duration_ms: .inf",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    idx = CoreIndexer(data_dir=tmp_path)
+
+    kpi = idx.kpi_summary()
+
+    assert kpi["write_to_indexed_latency_ms_avg"] == 0.0
+    assert kpi["repair_success_rate"] == 1.0
+    assert kpi["repair_avg_duration_ms"] == 0.0
+
+
 def test_kpi_summary_reports_sync_gap_and_repair_metrics(tmp_path, monkeypatch):
     idx = CoreIndexer(data_dir=tmp_path)
     ok_entry = idx.storage.save_convo_record(content="repair ok", requested_by_user=True)
