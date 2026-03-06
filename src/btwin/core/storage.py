@@ -9,10 +9,11 @@ from typing import Iterator
 import yaml
 
 from btwin.core.collab_models import CollabRecord
+from btwin.core.common_record_models import CommonRecordMetadata
 from btwin.core.document_contracts import validate_document_contract
 from btwin.core.models import Entry
 
-_FRAMEWORK_DIRS = {"convo", "collab", "global"}
+_FRAMEWORK_DIRS = {"convo", "collab", "global", "shared"}
 
 
 class Storage:
@@ -22,6 +23,7 @@ class Storage:
         self.convo_entries_dir = self.entries_dir / "convo"
         self.collab_entries_dir = self.entries_dir / "collab"
         self.promoted_entries_dir = self.entries_dir / "global"
+        self.shared_entries_dir = self.entries_dir / "shared"
 
     def save_entry(self, entry: Entry) -> Path:
         """Save an entry. If same date/slug exists, merge content and tags."""
@@ -139,6 +141,48 @@ class Storage:
                 raw = md_file.read_text()
                 entries.append(self._parse_file(raw, date_dir.name, md_file.stem))
         return entries
+
+    def save_shared_record(
+        self,
+        *,
+        namespace: str,
+        record_id: str,
+        content: str,
+        metadata: dict[str, object],
+    ) -> Path:
+        """Save a shared markdown record under entries/shared/<namespace>/YYYY-MM-DD/."""
+        common = CommonRecordMetadata.model_validate(
+            {
+                "docVersion": metadata.get("docVersion"),
+                "status": metadata.get("status"),
+                "createdAt": metadata.get("createdAt"),
+                "updatedAt": metadata.get("updatedAt"),
+                "recordType": metadata.get("recordType"),
+            }
+        )
+        namespace_slug = self._safe_path_segment(namespace)
+        record_slug = self._safe_path_segment(record_id)
+        if not namespace_slug:
+            raise ValueError("namespace must contain at least one safe character")
+        if not record_slug:
+            raise ValueError("record_id must contain at least one safe character")
+
+        day = common.created_at.date().isoformat()
+        file_path = self.shared_entries_dir / namespace_slug / day / f"{record_slug}.md"
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        frontmatter_metadata = dict(metadata)
+        frontmatter_metadata["recordType"] = common.record_type
+        frontmatter_metadata["createdAt"] = common.created_at.isoformat()
+        frontmatter_metadata["updatedAt"] = common.updated_at.isoformat()
+        frontmatter = yaml.dump(
+            frontmatter_metadata,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        ).strip()
+        file_path.write_text(f"---\n{frontmatter}\n---\n\n{content}\n")
+        return file_path
 
     def save_collab_record(self, record: CollabRecord) -> Path:
         """Save a collab record under entries/collab/YYYY-MM-DD/."""
@@ -294,6 +338,10 @@ class Storage:
                 for md_file in sorted(date_dir.glob("*.md")):
                     docs.append(self._index_doc_info(md_file, record_type="entry"))
 
+        if self.shared_entries_dir.exists():
+            for md_file in sorted(self.shared_entries_dir.glob("*/*/*.md")):
+                docs.append(self._index_doc_info(md_file, record_type=self._shared_record_type(md_file)))
+
         if self.convo_entries_dir.exists():
             for md_file in sorted(self.convo_entries_dir.glob("*/*.md")):
                 docs.append(self._index_doc_info(md_file, record_type="convo"))
@@ -375,6 +423,20 @@ class Storage:
         day = record.created_at.date().isoformat()
         safe_task = re.sub(r'[^a-zA-Z0-9_-]', '-', record.task_id)
         return self.collab_entries_dir / day / f"{safe_task}-{record.status}-{record.record_id}.md"
+
+    def _shared_record_type(self, file_path: Path) -> str:
+        metadata = self._parse_frontmatter_metadata(file_path.read_text()) or {}
+        record_type = str(metadata.get("recordType") or "").strip()
+        if record_type:
+            return record_type
+
+        relative = file_path.relative_to(self.shared_entries_dir)
+        namespace = relative.parts[0] if relative.parts else "shared"
+        return str(namespace)
+
+    @staticmethod
+    def _safe_path_segment(value: str) -> str:
+        return re.sub(r'[^a-zA-Z0-9_-]', '-', value).strip('-')
 
     def _index_doc_info(self, file_path: Path, *, record_type: str) -> dict[str, str]:
         rel = file_path.relative_to(self.data_dir).as_posix()
