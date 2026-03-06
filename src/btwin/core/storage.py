@@ -167,13 +167,25 @@ class Storage:
         if not record_slug:
             raise ValueError("record_id must contain at least one safe character")
 
-        day = common.created_at.date().isoformat()
-        file_path = self.shared_entries_dir / namespace_slug / day / f"{record_slug}.md"
+        frontmatter_metadata = dict(metadata)
+        frontmatter_record_id = str(frontmatter_metadata.get("recordId") or "").strip()
+        if frontmatter_record_id and frontmatter_record_id != record_id:
+            raise ValueError("metadata recordId must match record_id")
+        frontmatter_metadata["recordId"] = record_id
+
+        file_path = self._find_shared_record_file(namespace_slug=namespace_slug, record_slug=record_slug)
+        if file_path is None:
+            day = common.created_at.date().isoformat()
+            file_path = self.shared_entries_dir / namespace_slug / day / f"{record_slug}.md"
+            canonical_created_at = common.created_at.isoformat()
+        else:
+            existing_metadata = self._parse_frontmatter_metadata(file_path.read_text()) or {}
+            canonical_created_at = str(existing_metadata.get("createdAt") or common.created_at.isoformat())
+
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        frontmatter_metadata = dict(metadata)
         frontmatter_metadata["recordType"] = common.record_type
-        frontmatter_metadata["createdAt"] = common.created_at.isoformat()
+        frontmatter_metadata["createdAt"] = canonical_created_at
         frontmatter_metadata["updatedAt"] = common.updated_at.isoformat()
         frontmatter = yaml.dump(
             frontmatter_metadata,
@@ -356,6 +368,16 @@ class Storage:
                 docs.append(self._index_doc_info(md_file, record_type="promoted"))
 
         return docs
+
+    def _find_shared_record_file(self, *, namespace_slug: str, record_slug: str) -> Path | None:
+        namespace_dir = self.shared_entries_dir / namespace_slug
+        if not namespace_dir.exists():
+            return None
+
+        matches = sorted(namespace_dir.glob(f"*/{record_slug}.md"))
+        if not matches:
+            return None
+        return matches[0]
 
     def _find_collab_file(self, record_id: str) -> tuple[CollabRecord, Path, str] | None:
         best: tuple[CollabRecord, Path, str] | None = None

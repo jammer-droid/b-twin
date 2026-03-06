@@ -13,8 +13,14 @@ It is intentionally small:
 
 Shared foundation records saved under `entries/shared/<namespace>/<YYYY-MM-DD>/<record_id>.md` must retain enough information to compute a resume pointer from disk alone.
 
+At the storage boundary (`Storage.save_shared_record(...)`):
+- frontmatter `recordId` is always persisted; if omitted it is synthesized from the `record_id` argument
+- if frontmatter `recordId` is supplied, it must match the `record_id` argument
+- the first persisted `createdAt` fixes the canonical on-disk path; later writes for the same namespace/record id reuse that path even if the caller supplies a different `createdAt`
+
 Minimum fields used by the contract:
 - `recordId`
+- `createdAt` (canonical creation timestamp)
 - `docVersion`
 - `status`
 - `updatedAt`
@@ -55,9 +61,11 @@ Recovery-oriented audit payloads should include the identifiers needed by the ca
 
 ## What this phase guarantees today
 
+- Shared records persist a canonical `recordId` at the storage boundary.
 - Shared records are stored at a stable, deterministic path.
+- Updates for an existing shared record keep the original `createdAt`/path anchor instead of creating a second logical record under a new date directory.
 - Latest persisted frontmatter is sufficient to compute a resume pointer.
-- Audit rows preserve reconstruction identifiers without renaming or dropping payload keys.
+- Audit rows preserve reconstruction identifiers without renaming or dropping payload keys, and include the standard top-level timestamp/event envelope from `AuditLogger`.
 - No change to `src/btwin/core/audit.py` is required for this contract.
 
 ## What this phase does not guarantee
@@ -65,6 +73,7 @@ Recovery-oriented audit payloads should include the identifiers needed by the ca
 - full workflow scheduling or dispatch decisions
 - retry thresholds or escalation policy
 - automatic replay of side effects
+- automatic repair/deduplication of pre-existing shared-record duplicates created before these storage guards
 - semantic interpretation of audit payloads beyond identifier preservation
 
 Those belong to higher-level workflow recovery logic built on top of this foundation.
