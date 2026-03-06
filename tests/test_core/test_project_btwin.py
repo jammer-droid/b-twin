@@ -1,6 +1,6 @@
 """Tests for project parameter wiring through BTwin core methods."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from pathlib import Path
 
 from btwin.core.btwin import BTwin

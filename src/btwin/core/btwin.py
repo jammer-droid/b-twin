@@ -158,7 +158,7 @@ class BTwin:
             topic=topic,
             project=project,
         )
-        path = self.storage._project_dir(project) / "convo" / entry.date / f"{entry.slug}.md"
+        path = self.storage.project_dir(project) / "convo" / entry.date / f"{entry.slug}.md"
         self._index_file(path, record_type="convo", project=project)
 
         return {"date": entry.date, "slug": entry.slug, "path": str(path)}

@@ -38,8 +38,12 @@ class Storage:
             raise ValueError(f"'{project}' is a reserved project name")
         return project
 
-    def _project_dir(self, project: str | None) -> Path:
+    def project_dir(self, project: str | None) -> Path:
+        """Return the root directory for a given project (public API)."""
         return self.entries_dir / self._resolve_project(project)
+
+    # Keep private alias for internal consistency
+    _project_dir = project_dir
 
     @property
     def convo_entries_dir(self) -> Path:
