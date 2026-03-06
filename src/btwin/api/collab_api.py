@@ -269,6 +269,51 @@ def create_collab_app(
             {"issues": exc.errors()},
         )
 
+    def _foundation_ui_shell_html() -> str:
+        return """
+<!doctype html>
+<html lang=\"ko\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>B-TWIN Shared Shell</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; color: #0f172a; }
+    h1 { margin: 0 0 8px; }
+    p { color: #475569; }
+    nav { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
+    a { color: #0f172a; text-decoration: none; border: 1px solid #cbd5e1; border-radius: 999px; padding: 8px 12px; }
+    a:hover { background: #f8fafc; }
+    .panel { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; background: #fff; }
+    ul { margin: 12px 0 0; padding-left: 20px; color: #475569; }
+  </style>
+</head>
+<body>
+  <h1>B-TWIN shared shell</h1>
+  <p>Minimal foundation navigation for workflow and dashboard features.</p>
+  <nav aria-label=\"foundation\">
+    <a href=\"/ui/workflows\">workflows</a>
+    <a href=\"/ui/entries\">entries</a>
+    <a href=\"/ui/sources\">sources</a>
+    <a href=\"/ui/summary\">summary</a>
+    <a href=\"/ops\">ops</a>
+  </nav>
+  <section class=\"panel\">
+    <strong>shared shell only</strong>
+    <ul>
+      <li>feature pages can plug in behind these routes later</li>
+      <li>existing entries and ops screens remain available</li>
+      <li>workflows, sources, and summary stay intentionally lightweight for now</li>
+    </ul>
+  </section>
+</body>
+</html>
+        """
+
+    @app.get("/ui", response_class=HTMLResponse)
+    def foundation_ui_shell() -> str:
+        return _foundation_ui_shell_html()
+
     def _ui_html() -> str:
         return """
 <!doctype html>
