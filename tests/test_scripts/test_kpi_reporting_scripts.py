@@ -100,10 +100,11 @@ def test_generate_weekly_kpi_report_from_logs(tmp_path: Path):
     env["BTWIN_DATA_DIR"] = str(data_dir)
 
     week = "2026-10"
-    res = _run_script("generate_weekly_kpi_report.py", ["--week", week], env)
+    out_dir = str(tmp_path / "reports")
+    res = _run_script("generate_weekly_kpi_report.py", ["--week", week, "--output-dir", out_dir], env)
     assert res.returncode == 0, res.stderr
 
-    report_path = ROOT / "docs" / "reports" / "weekly-kpi" / f"{week}.md"
+    report_path = tmp_path / "reports" / f"{week}.md"
     assert report_path.exists()
     body = report_path.read_text(encoding="utf-8")
 

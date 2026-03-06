@@ -34,12 +34,12 @@ run_step() {
   "$@"
 }
 
-if ! {
-  run_step "[1/2] reconcile" ${BTWIN_CMD[@]} indexer reconcile
-  run_step "[2/2] refresh --limit ${LIMIT}" ${BTWIN_CMD[@]} indexer refresh --limit "${LIMIT}"
-}; then
+if ! run_step "[1/2] reconcile" "${BTWIN_CMD[@]}" indexer reconcile; then
   SUCCESS=false
-  ERROR_MESSAGE="end-of-batch sync command failed"
+  ERROR_MESSAGE="step failed: reconcile"
+elif ! run_step "[2/2] refresh --limit ${LIMIT}" "${BTWIN_CMD[@]}" indexer refresh --limit "${LIMIT}"; then
+  SUCCESS=false
+  ERROR_MESSAGE="step failed: refresh"
 fi
 
 END_MS="$(uv run python - <<'PY'

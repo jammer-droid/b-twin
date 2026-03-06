@@ -17,6 +17,7 @@ from btwin.config import resolve_data_dir
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate weekly KPI markdown report from snapshot + batch logs.")
     parser.add_argument("--week", required=True, help="ISO week in YYYY-WW format")
+    parser.add_argument("--output-dir", help="Output directory for report", default=None)
     return parser.parse_args()
 
 
@@ -122,7 +123,7 @@ def main() -> int:
     if not actions:
         actions.append("Maintain current operations and continue weekly monitoring.")
 
-    report_dir = Path("docs/reports/weekly-kpi")
+    report_dir = Path(args.output_dir).resolve() if args.output_dir else ROOT / "docs" / "reports" / "weekly-kpi"
     report_dir.mkdir(parents=True, exist_ok=True)
     out_path = report_dir / f"{args.week}.md"
 
