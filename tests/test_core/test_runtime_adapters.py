@@ -178,3 +178,183 @@ def test_query_respects_limit_parameter(tmp_path) -> None:
     # They should be the last 5 events (indices 15..19)
     versions = [e.doc_version for e in limited]
     assert versions == [15, 16, 17, 18, 19]
+
+
+# --- Issue I4: _coerce_int with Inf/NaN ---
+
+
+def test_coerce_int_handles_positive_infinity() -> None:
+    from btwin.core.runtime_adapters import _coerce_int
+
+    assert _coerce_int(float("inf"), default=42) == 42
+
+
+def test_coerce_int_handles_negative_infinity() -> None:
+    from btwin.core.runtime_adapters import _coerce_int
+
+    assert _coerce_int(float("-inf"), default=42) == 42
+
+
+def test_coerce_int_handles_nan() -> None:
+    from btwin.core.runtime_adapters import _coerce_int
+
+    assert _coerce_int(float("nan"), default=42) == 42
+
+
+def test_coerce_int_still_works_for_normal_values() -> None:
+    from btwin.core.runtime_adapters import _coerce_int
+
+    assert _coerce_int(7, default=0) == 7
+    assert _coerce_int("13", default=0) == 13
+    assert _coerce_int(3.9, default=0) == 3
+    assert _coerce_int("not_a_number", default=-1) == -1
+    assert _coerce_int(None, default=99) == 99
+
+
+# --- Issue C1-P0: verify_integrity ---
+
+
+def test_verify_integrity_valid_jsonl(tmp_path) -> None:
+    """verify_integrity returns ok=True when all lines are valid."""
+    from btwin.core.runtime_adapters import RuntimeAuditAdapter
+
+    log_path = tmp_path / "audit.log.jsonl"
+    logger = AuditLogger(log_path)
+    adapter = RuntimeAuditAdapter(logger=logger, mode="standalone")
+
+    # Write valid audit events via the adapter
+    for i in range(3):
+        adapter.append(
+            AuditEvent(
+                event_type="test_event",
+                actor="bot",
+                trace_id=f"trc_{i:04d}",
+                doc_version=i,
+                checksum="sha256:x",
+                payload={"i": i},
+                timestamp=datetime.now(UTC),
+            )
+        )
+
+    report = adapter.verify_integrity("")
+    assert report.ok is True
+    assert report.failed_ranges == []
+
+
+def test_verify_integrity_malformed_json_lines(tmp_path) -> None:
+    """verify_integrity returns ok=False with details when lines are not valid JSON."""
+    from btwin.core.runtime_adapters import RuntimeAuditAdapter
+
+    log_path = tmp_path / "audit.log.jsonl"
+    # Write a mix of valid and invalid lines
+    log_path.write_text(
+        '{"timestamp":"2026-01-01T00:00:00Z","eventType":"ok","traceId":"trc_1"}\n'
+        "this is not json\n"
+        '{"timestamp":"2026-01-02T00:00:00Z","eventType":"ok","traceId":"trc_2"}\n'
+        "{truncated\n",
+        encoding="utf-8",
+    )
+
+    logger = AuditLogger(log_path)
+    adapter = RuntimeAuditAdapter(logger=logger, mode="standalone")
+
+    report = adapter.verify_integrity("")
+    assert report.ok is False
+    assert len(report.failed_ranges) == 2
+    assert "line 2" in report.failed_ranges[0]
+    assert "invalid JSON" in report.failed_ranges[0]
+    assert "line 4" in report.failed_ranges[1]
+    assert "invalid JSON" in report.failed_ranges[1]
+
+
+def test_verify_integrity_missing_required_fields(tmp_path) -> None:
+    """verify_integrity reports lines with missing required fields."""
+    from btwin.core.runtime_adapters import RuntimeAuditAdapter
+
+    log_path = tmp_path / "audit.log.jsonl"
+    log_path.write_text(
+        # Valid line
+        '{"timestamp":"2026-01-01T00:00:00Z","eventType":"ok","traceId":"trc_1"}\n'
+        # Missing eventType and traceId
+        '{"timestamp":"2026-01-02T00:00:00Z"}\n'
+        # Missing timestamp
+        '{"eventType":"bad","traceId":"trc_3"}\n',
+        encoding="utf-8",
+    )
+
+    logger = AuditLogger(log_path)
+    adapter = RuntimeAuditAdapter(logger=logger, mode="standalone")
+
+    report = adapter.verify_integrity("")
+    assert report.ok is False
+    assert len(report.failed_ranges) == 2
+    # Line 2 should report missing eventType and traceId
+    assert "line 2" in report.failed_ranges[0]
+    assert "eventType" in report.failed_ranges[0]
+    assert "traceId" in report.failed_ranges[0]
+    # Line 3 should report missing timestamp
+    assert "line 3" in report.failed_ranges[1]
+    assert "timestamp" in report.failed_ranges[1]
+
+
+def test_verify_integrity_range_name_filters_by_event_type(tmp_path) -> None:
+    """When range_name is provided, only events matching that eventType are checked."""
+    from btwin.core.runtime_adapters import RuntimeAuditAdapter
+
+    log_path = tmp_path / "audit.log.jsonl"
+    log_path.write_text(
+        # Valid event of type "alpha"
+        '{"timestamp":"2026-01-01T00:00:00Z","eventType":"alpha","traceId":"trc_1"}\n'
+        # Invalid event of type "beta" (missing traceId) -- should be checked
+        '{"timestamp":"2026-01-02T00:00:00Z","eventType":"beta"}\n'
+        # Invalid event of type "alpha" (missing timestamp) -- should be checked
+        '{"eventType":"alpha","traceId":"trc_3"}\n',
+        encoding="utf-8",
+    )
+
+    logger = AuditLogger(log_path)
+    adapter = RuntimeAuditAdapter(logger=logger, mode="standalone")
+
+    # Only check "alpha" events -- line 2 (beta) should be skipped
+    report = adapter.verify_integrity("alpha")
+    assert report.ok is False
+    assert len(report.failed_ranges) == 1
+    assert "line 3" in report.failed_ranges[0]
+    assert "timestamp" in report.failed_ranges[0]
+
+    # Only check "beta" events -- line 3 (alpha) should be skipped
+    report_beta = adapter.verify_integrity("beta")
+    assert report_beta.ok is False
+    assert len(report_beta.failed_ranges) == 1
+    assert "line 2" in report_beta.failed_ranges[0]
+    assert "traceId" in report_beta.failed_ranges[0]
+
+
+def test_verify_integrity_empty_file(tmp_path) -> None:
+    """verify_integrity returns ok=True for an empty log file."""
+    from btwin.core.runtime_adapters import RuntimeAuditAdapter
+
+    log_path = tmp_path / "audit.log.jsonl"
+    log_path.write_text("", encoding="utf-8")
+
+    logger = AuditLogger(log_path)
+    adapter = RuntimeAuditAdapter(logger=logger, mode="standalone")
+
+    report = adapter.verify_integrity("")
+    assert report.ok is True
+    assert report.failed_ranges == []
+
+
+def test_verify_integrity_nonexistent_file(tmp_path) -> None:
+    """verify_integrity returns ok=True when the log file doesn't exist yet."""
+    from btwin.core.runtime_adapters import RuntimeAuditAdapter
+
+    log_path = tmp_path / "audit.log.jsonl"
+    log_path.unlink(missing_ok=True)
+
+    logger = AuditLogger(log_path)
+    adapter = RuntimeAuditAdapter(logger=logger, mode="standalone")
+
+    report = adapter.verify_integrity("")
+    assert report.ok is True
+    assert report.failed_ranges == []

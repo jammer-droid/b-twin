@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import math
@@ -41,7 +42,7 @@ def _coerce_float(value: object, *, default: float) -> float:
 def _coerce_int(value: object, *, default: int) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
@@ -61,8 +62,6 @@ class StandaloneRecallAdapter(RecallPort):
             if not line.strip():
                 continue
             try:
-                import json
-
                 row = json.loads(line)
             except Exception:
                 continue
@@ -95,8 +94,6 @@ class StandaloneRecallAdapter(RecallPort):
         source: str | None = None,
         timestamp: datetime | None = None,
     ) -> MemoryRef:
-        import json
-
         record_id = f"mem_{uuid4().hex[:12]}"
         payload = {
             "record_id": record_id,
@@ -219,8 +216,45 @@ class RuntimeAuditAdapter(AuditPort):
         return events
 
     def verify_integrity(self, range_name: str) -> VerificationReport:
-        _ = range_name
-        return VerificationReport(ok=True)
+        log_path = self.logger.file_path
+        if not log_path.exists():
+            return VerificationReport(ok=True)
+
+        required_fields = {"timestamp", "eventType", "traceId"}
+        failed: list[str] = []
+        seen_any = False
+
+        with log_path.open(encoding="utf-8") as fh:
+            for line_no, line in enumerate(fh, start=1):
+                if not line.strip():
+                    continue
+                seen_any = True
+                # 1) Validate JSON parsing
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    failed.append(f"line {line_no}: invalid JSON")
+                    continue
+
+                if not isinstance(entry, dict):
+                    failed.append(f"line {line_no}: entry is not a JSON object")
+                    continue
+
+                # 2) If range_name is provided, scope to events matching that event type
+                if range_name:
+                    event_type = entry.get("eventType")
+                    if event_type != range_name:
+                        continue
+
+                # 3) Validate required fields
+                missing = required_fields - entry.keys()
+                if missing:
+                    failed.append(f"line {line_no}: missing fields {sorted(missing)}")
+
+        if not seen_any:
+            return VerificationReport(ok=True)
+
+        return VerificationReport(ok=len(failed) == 0, failed_ranges=failed)
 
 
 @dataclass(slots=True)
