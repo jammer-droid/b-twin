@@ -53,6 +53,33 @@ def test_reconcile_marks_missing_docs_deleted(tmp_path):
     assert item.status == "deleted"
 
 
+def test_reconcile_indexes_shared_workflow_docs(tmp_path):
+    idx = CoreIndexer(data_dir=tmp_path)
+    file_path = idx.storage.save_shared_record(
+        namespace="workflow",
+        record_id="epic-001",
+        content="workflow body",
+        metadata={
+            "docVersion": 1,
+            "status": "draft",
+            "createdAt": "2026-03-06T10:00:00+09:00",
+            "updatedAt": "2026-03-06T10:05:00+09:00",
+            "recordType": "workflow",
+            "title": "Common foundation workflow doc",
+        },
+    )
+    rel = str(file_path.relative_to(tmp_path))
+
+    result = idx.reconcile()
+
+    assert result["processed"] == 1
+    assert result["indexed"] == 1
+    item = idx.manifest.get(rel)
+    assert item is not None
+    assert item.record_type == "workflow"
+    assert item.status == "indexed"
+
+
 def test_repair_recovers_failed_document(tmp_path):
     idx = CoreIndexer(data_dir=tmp_path)
     entry = idx.storage.save_convo_record(content="repair me", requested_by_user=True)

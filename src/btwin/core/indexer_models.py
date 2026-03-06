@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 IndexStatus = Literal["pending", "indexed", "stale", "failed", "deleted"]
-RecordType = Literal["entry", "convo", "collab", "promoted"]
+RecordType = Literal["entry", "convo", "collab", "promoted", "workflow"]
 
 
 class IndexEntry(BaseModel):
