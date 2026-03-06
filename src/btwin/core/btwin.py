@@ -41,6 +41,8 @@ class BTwin:
         self,
         summary: str | None = None,
         slug: str | None = None,
+        *,
+        project: str | None = None,
     ) -> dict | None:
         """End the current session and save as an entry.
 
@@ -92,8 +94,8 @@ class BTwin:
                 "created_at": now.isoformat(),
             },
         )
-        saved_path = self.storage.save_entry(entry)
-        self._index_file(saved_path, record_type="entry")
+        saved_path = self.storage.save_entry(entry, project=project)
+        self._index_file(saved_path, record_type="entry", project=project)
 
         try:
             self._update_summary(date, slug, content)
@@ -129,31 +131,39 @@ class BTwin:
         lexical_weight: float = 0.4,
         recency_half_life_days: float = 30.0,
         mmr_lambda: float = 0.75,
+        project: str | None = None,
     ) -> list[dict]:
         """Search past entries by semantic similarity with optional metadata filters."""
+        metadata_filters = filters
+        if project is not None:
+            metadata_filters = dict(metadata_filters) if metadata_filters else {}
+            metadata_filters["project"] = project
         return self.vector_store.search(
             query,
             n_results=n_results,
-            metadata_filters=filters,
+            metadata_filters=metadata_filters,
             hybrid=hybrid,
             lexical_weight=lexical_weight,
             recency_half_life_days=recency_half_life_days,
             mmr_lambda=mmr_lambda,
         )
 
-    def record_convo(self, content: str, requested_by_user: bool = False, topic: str | None = None) -> dict:
+    def record_convo(
+        self, content: str, requested_by_user: bool = False, topic: str | None = None, *, project: str | None = None
+    ) -> dict:
         """Record explicit user conversation memory under convo namespace."""
         entry = self.storage.save_convo_record(
             content=content,
             requested_by_user=requested_by_user,
             topic=topic,
+            project=project,
         )
-        path = self.storage.convo_entries_dir / entry.date / f"{entry.slug}.md"
-        self._index_file(path, record_type="convo")
+        path = self.storage._project_dir(project) / "convo" / entry.date / f"{entry.slug}.md"
+        self._index_file(path, record_type="convo", project=project)
 
         return {"date": entry.date, "slug": entry.slug, "path": str(path)}
 
-    def record(self, content: str, topic: str | None = None) -> dict:
+    def record(self, content: str, topic: str | None = None, *, project: str | None = None) -> dict:
         """Manually record a note."""
         now = datetime.now(timezone.utc)
         date = now.strftime("%Y-%m-%d")
@@ -170,9 +180,9 @@ class BTwin:
                 "recordType": "entry",
             },
         )
-        saved_path = self.storage.save_entry(entry)
+        saved_path = self.storage.save_entry(entry, project=project)
 
-        self._index_file(saved_path, record_type="entry")
+        self._index_file(saved_path, record_type="entry", project=project)
 
         try:
             self._update_summary(date, slug, content)
@@ -187,6 +197,8 @@ class BTwin:
         slug: str,
         tags: list[str] | None = None,
         source_path: str | None = None,
+        *,
+        project: str | None = None,
     ) -> dict:
         """Import a single entry with explicit date, slug, and tags."""
         metadata: dict[str, object] = {"recordType": "entry"}
@@ -202,9 +214,9 @@ class BTwin:
             content=content,
             metadata=metadata,
         )
-        saved_path = self.storage.save_entry(entry)
+        saved_path = self.storage.save_entry(entry, project=project)
 
-        self._index_file(saved_path, record_type="entry")
+        self._index_file(saved_path, record_type="entry", project=project)
 
         try:
             self._update_summary(date, slug, content)
@@ -225,7 +237,7 @@ class BTwin:
             "created_at": session.created_at.isoformat(),
         }
 
-    def _index_file(self, path: Path, *, record_type: RecordType) -> None:
+    def _index_file(self, path: Path, *, record_type: RecordType, project: str | None = None) -> None:
         """Mark file for indexing and perform best-effort targeted indexing."""
         rel = path.relative_to(self.config.data_dir).as_posix()
         checksum = self._checksum(path)
@@ -234,6 +246,7 @@ class BTwin:
             path=rel,
             record_type=record_type,
             checksum=checksum,
+            project=project,
         )
         result = self.indexer.repair(rel)
         if not result.get("ok"):
