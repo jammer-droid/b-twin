@@ -115,3 +115,66 @@ def test_attached_audit_event_uses_runtime_envelope(tmp_path) -> None:
     assert envelope["mode"] == "attached"
     assert envelope["traceId"] == "trc_x"
     assert envelope["docVersion"] == 7
+
+    # Issue 1: verify the outer event's traceId matches the caller's trace_id
+    assert tail[0]["traceId"] == "trc_x"
+
+
+def test_append_preserves_caller_trace_id_in_outer_event(tmp_path) -> None:
+    """The outer audit log event's traceId must match the AuditEvent.trace_id
+    passed by the caller, not be replaced by a newly generated uuid."""
+    from btwin.core.runtime_adapters import RuntimeAuditAdapter
+
+    logger = AuditLogger(tmp_path / "audit.log.jsonl")
+    adapter = RuntimeAuditAdapter(logger=logger, mode="standalone")
+
+    adapter.append(
+        AuditEvent(
+            event_type="test_trace",
+            actor="ci",
+            trace_id="trc_myspecialid",
+            doc_version=1,
+            checksum="sha256:000",
+            payload={},
+            timestamp=datetime.now(UTC),
+        )
+    )
+
+    raw = logger.tail(limit=1)[0]
+    # The outer traceId must be the caller's, not a freshly generated one
+    assert raw["traceId"] == "trc_myspecialid"
+    # The envelope payload should also carry the same traceId
+    assert raw["payload"]["traceId"] == "trc_myspecialid"
+
+
+def test_query_respects_limit_parameter(tmp_path) -> None:
+    """Issue 3: AuditPort.query() should accept and honour a limit parameter."""
+    from btwin.core.runtime_adapters import RuntimeAuditAdapter
+
+    logger = AuditLogger(tmp_path / "audit.log.jsonl")
+    adapter = RuntimeAuditAdapter(logger=logger, mode="standalone")
+
+    # Write 20 events
+    for i in range(20):
+        adapter.append(
+            AuditEvent(
+                event_type="numbered",
+                actor="bot",
+                trace_id=f"trc_{i:04d}",
+                doc_version=i,
+                checksum="sha256:x",
+                payload={"index": i},
+                timestamp=datetime.now(UTC),
+            )
+        )
+
+    # Default limit=500 should return all 20
+    all_events = adapter.query()
+    assert len(all_events) == 20
+
+    # Explicit limit=5 should return only 5 (the last 5 logged)
+    limited = adapter.query(limit=5)
+    assert len(limited) == 5
+    # They should be the last 5 events (indices 15..19)
+    versions = [e.doc_version for e in limited]
+    assert versions == [15, 16, 17, 18, 19]

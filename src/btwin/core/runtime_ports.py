@@ -124,6 +124,7 @@ class AuditPort(Protocol):
         actor: str | None = None,
         event_type: str | None = None,
         time_range: tuple[datetime, datetime] | None = None,
+        limit: int = 500,
     ) -> list[AuditEvent]: ...
 
     def verify_integrity(self, range_name: str) -> VerificationReport: ...

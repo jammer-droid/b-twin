@@ -174,7 +174,11 @@ class RuntimeAuditAdapter(AuditPort):
             "payload": event.payload,
             "timestamp": event.timestamp.isoformat(),
         }
-        self.logger.log(event_type=event.event_type, payload=envelope)
+        self.logger.log(
+            event_type=event.event_type,
+            payload=envelope,
+            trace_id=event.trace_id,
+        )
 
     def query(
         self,
@@ -183,8 +187,9 @@ class RuntimeAuditAdapter(AuditPort):
         actor: str | None = None,
         event_type: str | None = None,
         time_range: tuple[datetime, datetime] | None = None,
+        limit: int = 500,
     ) -> list[AuditEvent]:
-        rows = self.logger.tail(limit=500)
+        rows = self.logger.tail(limit=limit)
         events: list[AuditEvent] = []
         for row in rows:
             if event_type and row.get("eventType") != event_type:
