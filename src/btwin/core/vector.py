@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,12 +13,14 @@ import chromadb
 
 
 class VectorStore:
+    _SEARCH_CACHE_MAX = 128
+
     def __init__(self, persist_dir: Path) -> None:
         self._client = chromadb.PersistentClient(path=str(persist_dir))
         self._collection = self._client.get_or_create_collection(
             name="btwin_entries",
         )
-        self._search_cache: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+        self._search_cache: OrderedDict[tuple[Any, ...], list[dict[str, Any]]] = OrderedDict()
 
     def add(self, doc_id: str, content: str, metadata: dict[str, Any] | None = None) -> None:
         """Add or update a document in the vector store."""
@@ -82,7 +85,8 @@ class VectorStore:
         if not vector_candidates:
             return []
 
-        lexical_scores = self._lexical_scores(query, metadata_filters)
+        candidate_ids = [item["id"] for item in vector_candidates]
+        lexical_scores = self._lexical_scores(query, candidate_ids)
 
         scored: list[dict[str, Any]] = []
         for item in vector_candidates:
@@ -119,6 +123,8 @@ class VectorStore:
             output.append(payload)
 
         self._search_cache[cache_key] = [dict(item) for item in output]
+        while len(self._search_cache) > self._SEARCH_CACHE_MAX:
+            self._search_cache.popitem(last=False)
         return output
 
     def delete(self, doc_id: str) -> None:
@@ -169,18 +175,15 @@ class VectorStore:
             )
         return output
 
-    def _lexical_scores(self, query: str, metadata_filters: dict[str, str] | None) -> dict[str, float]:
+    def _lexical_scores(self, query: str, candidate_ids: list[str]) -> dict[str, float]:
         query_tokens = self._tokenize(query)
-        if not query_tokens:
+        if not query_tokens or not candidate_ids:
             return {}
 
-        get_args: dict[str, Any] = {"include": ["documents", "metadatas"]}
-        if metadata_filters:
-            get_args["where"] = metadata_filters
-        all_docs = self._collection.get(**get_args)
+        result = self._collection.get(ids=candidate_ids, include=["documents"])
 
-        ids = all_docs.get("ids") or []
-        docs = all_docs.get("documents") or []
+        ids = result.get("ids") or []
+        docs = result.get("documents") or []
 
         scores: dict[str, float] = {}
         for i, doc_id in enumerate(ids):
@@ -212,7 +215,7 @@ class VectorStore:
         candidate = metadata.get("created_at") or metadata.get("date")
         if not candidate:
             path = str(metadata.get("path") or "")
-            match = re.search(r"entries(?:/[^/]+)?/(\d{4}-\d{2}-\d{2})/", path)
+            match = re.search(r"(\d{4}-\d{2}-\d{2})", path)
             if match:
                 candidate = match.group(1)
         if not candidate:
@@ -258,7 +261,7 @@ class VectorStore:
             best_idx = 0
             best_score = -math.inf
             for idx, candidate in enumerate(remaining):
-                relevance = candidate.get("_score", 0.0)
+                relevance = candidate.get("_relevance", 0.0)
                 max_similarity = max(
                     self._content_similarity(candidate.get("content", ""), chosen.get("content", ""))
                     for chosen in selected
