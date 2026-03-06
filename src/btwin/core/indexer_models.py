@@ -18,6 +18,7 @@ class IndexEntry(BaseModel):
     record_type: RecordType
     checksum: str = Field(min_length=1)
     status: IndexStatus
+    project: str | None = None
     doc_version: int = Field(ge=1)
     error: str | None = None
     pending_since: float | None = None
