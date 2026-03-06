@@ -76,6 +76,15 @@ Common headers:
 
 Returns manifest summary.
 
+### GET `/api/ops/dashboard`
+
+Unified ops view containing:
+- `indexerStatus`
+- `failureQueue`
+- `repairHistory`
+- `gateViolations`
+- `runtime.mode`
+
 ### POST `/api/indexer/refresh`
 
 Body:
