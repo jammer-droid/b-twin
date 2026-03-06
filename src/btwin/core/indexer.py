@@ -21,6 +21,7 @@ class CoreIndexer:
         self.vector_store = VectorStore(persist_dir=data_dir / "index")
         self.manifest = IndexManifest(data_dir / "index_manifest.yaml")
         self._kpi_path = data_dir / "indexer_kpi.yaml"
+        self._repair_history_path = data_dir / "indexer_repair_history.jsonl"
         self._kpi = self._load_kpi()
 
     def mark_pending(self, *, doc_id: str, path: str, record_type: RecordType, checksum: str) -> IndexEntry:
@@ -190,14 +191,18 @@ class CoreIndexer:
         item = self.manifest.get(doc_id)
         if item is None:
             self._record_repair_duration(started)
-            return {"ok": False, "error": "not_found", "doc_id": doc_id}
+            result = {"ok": False, "error": "not_found", "doc_id": doc_id}
+            self._record_repair_result(result)
+            return result
 
         source_path = self.data_dir / item.path
         if not source_path.exists():
             self.vector_store.delete(item.doc_id)
             self.manifest.mark_status(item.doc_id, "deleted", error="repair: source missing")
             self._record_repair_duration(started)
-            return {"ok": False, "error": "source_missing", "doc_id": doc_id, "status": "deleted"}
+            result = {"ok": False, "error": "source_missing", "doc_id": doc_id, "status": "deleted"}
+            self._record_repair_result(result)
+            return result
 
         checksum = self._sha256(source_path)
         updated = self.manifest.upsert(
@@ -223,11 +228,15 @@ class CoreIndexer:
             self.manifest.mark_status(updated.doc_id, "indexed", error=None, clear_pending_since=True)
             self._kpi["repair_successes"] += 1
             self._record_repair_duration(started)
-            return {"ok": True, "doc_id": doc_id, "status": "indexed"}
+            result = {"ok": True, "doc_id": doc_id, "status": "indexed"}
+            self._record_repair_result(result)
+            return result
         except Exception as exc:  # pragma: no cover - defensive
             failed = self.manifest.mark_status(updated.doc_id, "failed", error=str(exc))
             self._record_repair_duration(started)
-            return {"ok": False, "doc_id": doc_id, "status": failed.status, "error": str(exc)}
+            result = {"ok": False, "doc_id": doc_id, "status": failed.status, "error": str(exc)}
+            self._record_repair_result(result)
+            return result
 
     def kpi_summary(self) -> dict[str, float | int | None]:
         indexed_doc_ids = {item.doc_id for item in self.manifest.list_by_status("indexed")}
@@ -253,6 +262,28 @@ class CoreIndexer:
 
     def status_summary(self) -> dict[str, int]:
         return self.manifest.summary()
+
+    def failure_queue(self) -> list[dict[str, object]]:
+        items = self.manifest.list_by_status("failed") + self.manifest.list_by_status("stale")
+        return [
+            {
+                "doc_id": item.doc_id,
+                "path": item.path,
+                "status": item.status,
+                "error": item.error,
+                "doc_version": item.doc_version,
+            }
+            for item in items
+        ]
+
+    def repair_history(self, limit: int = 20) -> list[dict[str, object]]:
+        if limit <= 0 or not self._repair_history_path.exists():
+            return []
+        import json
+
+        lines = self._repair_history_path.read_text(encoding="utf-8").splitlines()
+        rows = lines[-limit:]
+        return [json.loads(line) for line in rows if line.strip()]
 
     def _load_kpi(self) -> dict[str, float | int]:
         defaults: dict[str, float | int] = {
@@ -295,6 +326,13 @@ class CoreIndexer:
         duration_ms = max(0.0, (time.perf_counter() - started) * 1000.0)
         self._kpi["repair_total_duration_ms"] += duration_ms
         self._save_kpi()
+
+    def _record_repair_result(self, result: dict[str, object]) -> None:
+        import json
+
+        row = {"timestamp": time.time(), **result}
+        with self._repair_history_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     @staticmethod
     def _sha256(path: Path) -> str:
