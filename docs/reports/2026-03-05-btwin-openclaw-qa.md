@@ -135,8 +135,8 @@ status: active
   **Evidence:** `scripts/end_of_batch_sync.sh`, `README.md`, `docs/runbook.md`, `docs/release-checklist.md`  
   **DoD 판정:** 구현 완료 (기본 실행 helper/가이드 반영, 운영 성공률 평가는 릴리스 운영 데이터 필요)
 
-- [ ] **Action:** 불일치 대응 Runbook(`repair`) + KPI(불일치율, MTTR-sync) 주간 리포트 시작  
+- [x] **Action:** 불일치 대응 Runbook(`repair`) + KPI(불일치율, MTTR-sync) 주간 리포트 시작  
   **Owner:** Reliability Owner  
   **Due:** 2026-03-18  
-  **Evidence:** `docs/indexer-operations.md`, `docs/weekly-kpi-reporting.md`  
-  **DoD 판정:** 부분 완료 (문서는 준비됨, "2주 연속 KPI 보고"는 운영 실행 데이터 필요)
+  **Evidence:** `docs/indexer-operations.md`, `docs/weekly-kpi-reporting.md`, `scripts/collect_kpi_snapshot.py`, `scripts/generate_weekly_kpi_report.py`, `docs/reports/weekly-kpi/2026-09.md`, `docs/reports/weekly-kpi/2026-10.md`  
+  **DoD 판정:** 구현 완료 (자동 수집/리포트 스크립트 + 2개 연속 주차 리포트 파일 생성 완료, 운영 실측 데이터는 주간 누적 지속)

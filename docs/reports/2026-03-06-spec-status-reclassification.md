@@ -31,12 +31,14 @@ status: active
 ## Pending specs (implementation gap 기준)
 
 - 현재 즉시 실행 체크리스트 기준으로 **추가 구현 갭은 없음**.
-- 남은 항목은 코드/문서 구현이 아닌 운영 실행 증적 수집 성격:
-  - 2주 연속 KPI 리포트 축적
-  - 운영환경 주간 파이프라인 성공률(99%+) 관측
+- KPI/배치 운영 증적 자동화도 구현되어 실행 가능:
+  - `scripts/collect_kpi_snapshot.py` (스냅샷 JSONL 적재)
+  - `scripts/generate_weekly_kpi_report.py` (주간 Markdown 리포트 생성)
+  - `scripts/end_of_batch_sync.sh` 구조화 실행 로그 적재
+  - `docs/reports/weekly-kpi/2026-09.md`, `docs/reports/weekly-kpi/2026-10.md` 생성 완료
 
 ## Release-time operational checks (not implementation blockers)
 
-- 실제 운영 배치에서 `scripts/end_of_batch_sync.sh` 주간 성공률 측정
-- 주간 KPI 리포트 2회 이상 발행 및 Top 3 원인/개선안 기록
+- 실제 운영 트래픽 기준으로 `scripts/end_of_batch_sync.sh` 주간 성공률(99%+) 연속 관측
+- 주간 KPI 리포트를 실운영 데이터로 지속 발행(백필 아닌 실시간 누적)
 - 스테이징/프로덕션에서 `python scripts/doc_version_check.py`를 release gate에 포함

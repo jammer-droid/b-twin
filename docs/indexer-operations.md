@@ -173,4 +173,8 @@ btwin indexer reconcile
 - Daily/periodic: `btwin indexer status`
 - End-of-batch/session: `./scripts/end_of_batch_sync.sh` (default limit=200)
 - On deployment/migration: `./scripts/end_of_batch_sync.sh 500`
+- KPI snapshot collection: `./scripts/collect_kpi_snapshot.py`
+- Weekly report generation: `./scripts/generate_weekly_kpi_report.py --week YYYY-WW`
 - Incident recovery: `btwin indexer repair --doc-id ...` then `status`
+
+Batch run logs are appended to `<data_dir>/ops/end_of_batch_runs.jsonl` and weekly KPI snapshots to `<data_dir>/ops/kpi_snapshots.jsonl`.

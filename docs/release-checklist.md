@@ -23,9 +23,9 @@ status: active
 
 ## 4) Performance sanity
 - [ ] `btwin indexer refresh --limit 200` executed on staging dataset
-- [ ] KPI snapshot recorded (`btwin indexer kpi`)
+- [ ] KPI snapshot recorded (`./scripts/collect_kpi_snapshot.py`)
 
 ## 5) Ops handoff
 - [ ] Runbook updated (`docs/runbook.md`)
-- [ ] Weekly KPI report template prepared (`docs/weekly-kpi-reporting.md`)
+- [ ] Weekly KPI report generated (`./scripts/generate_weekly_kpi_report.py --week YYYY-WW`)
 - [ ] Release note includes runtime mode impact (attached/standalone)
