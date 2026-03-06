@@ -10,7 +10,7 @@ from collections import OrderedDict
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, Request
+from fastapi import APIRouter, FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -128,6 +128,22 @@ def create_collab_app(
     )
     _IDEMPOTENCY_CACHE_MAX = 1000
     idempotency_cache: OrderedDict[str, dict[str, str]] = OrderedDict()
+
+    def _foundation_router(scope: str) -> APIRouter:
+        router = APIRouter(prefix=f"/api/{scope}", tags=[f"foundation:{scope}"])
+
+        @router.get("/health")
+        def foundation_health():
+            return {
+                "ok": True,
+                "scope": scope,
+                "status": "available",
+            }
+
+        return router
+
+    for foundation_scope in ("workflows", "entries", "sources"):
+        app.include_router(_foundation_router(foundation_scope))
 
     def _trace_id() -> str:
         return f"trc_{uuid4().hex[:12]}"
