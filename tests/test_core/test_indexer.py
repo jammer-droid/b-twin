@@ -1,5 +1,7 @@
 import hashlib
 
+import yaml
+
 from btwin.core.indexer import CoreIndexer
 
 
@@ -126,6 +128,30 @@ def test_refresh_recomputes_checksum_before_indexing_backlog_doc(tmp_path):
     assert item.status == "indexed"
     assert item.checksum == new_checksum
     assert item.doc_version == 2
+
+
+def test_kpi_summary_ignores_malformed_kpi_values(tmp_path):
+    kpi_path = tmp_path / "indexer_kpi.yaml"
+    kpi_path.write_text(
+        yaml.safe_dump(
+            {
+                "write_to_indexed_samples": "not-a-number",
+                "write_to_indexed_total_ms": "oops",
+                "repair_attempts": "bad",
+                "repair_successes": "nan",
+                "repair_total_duration_ms": "broken",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    idx = CoreIndexer(data_dir=tmp_path)
+
+    kpi = idx.kpi_summary()
+
+    assert kpi["write_to_indexed_latency_ms_avg"] is None
+    assert kpi["repair_success_rate"] is None
+    assert kpi["repair_avg_duration_ms"] is None
 
 
 def test_kpi_summary_reports_sync_gap_and_repair_metrics(tmp_path, monkeypatch):

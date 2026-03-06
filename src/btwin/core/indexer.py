@@ -47,6 +47,7 @@ class CoreIndexer:
         indexed = 0
         deleted = 0
         failed = 0
+        kpi_changed = False
 
         queue: list[IndexEntry] = []
         queue.extend(self.manifest.list_by_status("pending"))
@@ -99,11 +100,14 @@ class CoreIndexer:
                     latency_ms = max(0.0, (time.time() - item.pending_since) * 1000.0)
                     self._kpi["write_to_indexed_samples"] += 1
                     self._kpi["write_to_indexed_total_ms"] += latency_ms
-                    self._save_kpi()
+                    kpi_changed = True
                 indexed += 1
             except Exception as exc:  # pragma: no cover - defensive
                 self.manifest.mark_status(item.doc_id, "failed", error=str(exc))
                 failed += 1
+
+        if kpi_changed:
+            self._save_kpi()
 
         return {
             "processed": processed,
@@ -218,9 +222,18 @@ class CoreIndexer:
             return defaults
 
         merged = defaults.copy()
-        for key in defaults:
-            if key in raw:
-                merged[key] = raw[key]
+        for key, default_value in defaults.items():
+            if key not in raw:
+                continue
+
+            value = raw[key]
+            try:
+                if isinstance(default_value, int):
+                    merged[key] = int(value)
+                else:
+                    merged[key] = float(value)
+            except (TypeError, ValueError):
+                merged[key] = default_value
         return merged
 
     def _save_kpi(self) -> None:
