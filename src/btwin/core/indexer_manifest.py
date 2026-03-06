@@ -30,6 +30,7 @@ class IndexManifest:
         record_type: RecordType,
         checksum: str,
         status: IndexStatus,
+        project: str | None = None,
         doc_version: int | None = None,
         error: str | None = None,
         pending_since: float | None = None,
@@ -46,12 +47,15 @@ class IndexManifest:
         else:
             resolved_version = doc_version
 
+        resolved_project = project if project is not None else (existing.project if existing else None)
+
         entry = IndexEntry(
             doc_id=doc_id,
             path=path,
             record_type=record_type,
             checksum=checksum,
             status=status,
+            project=resolved_project,
             doc_version=resolved_version,
             error=error,
             pending_since=pending_since if pending_since is not None else (existing.pending_since if existing else None),

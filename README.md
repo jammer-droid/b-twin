@@ -8,23 +8,20 @@ MCP clients (Claude Code, Codex CLI, Gemini CLI, etc.) provide the LLM brain —
 ## Architecture
 
 ```
-MCP Client (Claude Code, etc.)
-    | MCP protocol (stdio)
-B-TWIN MCP Server (FastMCP)
-    |
-B-TWIN Core Library
-    +-- Storage (markdown files with YAML frontmatter)
-    +-- VectorStore (ChromaDB, semantic search)
-    +-- SessionManager (conversation lifecycle)
-    |
-Data Layer
-    +-- ~/.btwin/entries/{date}/{slug}.md
-    +-- ~/.btwin/entries/convo/{date}/{slug}.md
-    +-- ~/.btwin/entries/collab/{date}/*.md
-    +-- ~/.btwin/entries/global/promoted/*.md
-    +-- ~/.btwin/index_manifest.yaml
-    +-- ~/.btwin/index/ (ChromaDB)
-    +-- ~/.btwin/summary.md (cumulative)
+Bot/Claude → MCP Proxy (project=X) → B-TWIN HTTP API (localhost:8787)
+```
+
+Each MCP client connects through a lightweight proxy that tags requests with a project identifier. The HTTP API server manages storage, indexing, and search.
+
+```
+~/.btwin/entries/
+  _global/                    ← default project (no project specified)
+    2026-03-06/slug.md
+    convo/2026-03-06/slug.md
+    collab/2026-03-06/slug.md
+  my-project/                 ← project-specific entries
+    2026-03-06/slug.md
+    convo/2026-03-06/slug.md
 ```
 
 ## Installation
@@ -40,23 +37,30 @@ cd b-twin
 1. Checks for [uv](https://docs.astral.sh/uv/) and installs it if missing
 2. Installs Python dependencies (`uv sync`)
 3. Creates `~/.btwin/` global data directory
-4. Generates `~/.btwin/serve.sh` wrapper script
+4. Generates `~/.btwin/serve.sh` and `~/.btwin/proxy.sh` wrapper scripts
 
-After installation, add the following to your project's `.mcp.json`:
+## Project Setup
 
-```json
-{
-  "mcpServers": {
-    "btwin": {
-      "command": "~/.btwin/serve.sh",
-      "args": []
-    }
-  }
-}
+**Claude Code / Codex CLI:**
+
+```bash
+cd my-project
+./install.sh              # One-time: install B-TWIN
+btwin serve-api            # Start the API server (keep running)
+btwin init                 # Auto-detect project name from git, create .mcp.json
+# or: btwin init my-project
 ```
 
-> Replace `~` with your actual home directory path (e.g., `/Users/you/.btwin/serve.sh`).
-> The exact snippet with the correct path is printed at the end of `install.sh`.
+`btwin init` generates `.mcp.json` that routes MCP traffic through the proxy with the correct project binding.
+
+**OpenClaw bots:**
+
+```yaml
+mcp_servers:
+  btwin:
+    command: ~/.btwin/proxy.sh
+    args: [--project, main]
+```
 
 ## MCP Tools
 
@@ -91,6 +95,18 @@ B-TWIN resolves the data directory with the following precedence:
 1. `BTWIN_DATA_DIR` environment variable
 2. Per-project `.btwin/` directory (if it exists in CWD)
 3. Global `~/.btwin/` (default)
+
+## Migration
+
+For existing users upgrading to project-partitioned storage:
+
+```bash
+python scripts/migrate_to_project_layout.py
+btwin indexer reconcile
+btwin indexer refresh
+```
+
+This moves existing entries under `_global/` and rebuilds the index.
 
 ## Indexer Operations (VS6)
 

@@ -12,20 +12,57 @@ from btwin.core.collab_models import CollabRecord
 from btwin.core.document_contracts import validate_document_contract
 from btwin.core.models import Entry
 
-_FRAMEWORK_DIRS = {"convo", "collab", "global"}
+_PROJECT_NAME_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$")
+_RESERVED_PROJECT_NAMES = {"global", "convo", "collab"}
+_DEFAULT_PROJECT = "_global"
+_RECORD_SUBDIRS = {"convo", "collab"}
 
 
 class Storage:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
         self.entries_dir = data_dir / "entries"
-        self.convo_entries_dir = self.entries_dir / "convo"
-        self.collab_entries_dir = self.entries_dir / "collab"
         self.promoted_entries_dir = self.entries_dir / "global"
 
-    def save_entry(self, entry: Entry) -> Path:
+    # -- helpers for project-aware paths --
+
+    def _resolve_project(self, project: str | None) -> str:
+        if project is None or project == "":
+            return _DEFAULT_PROJECT
+        if not _PROJECT_NAME_RE.match(project):
+            raise ValueError(
+                f"Invalid project name: {project!r}. "
+                "Must match [a-zA-Z0-9_][a-zA-Z0-9_.-]*"
+            )
+        if project in _RESERVED_PROJECT_NAMES:
+            raise ValueError(f"'{project}' is a reserved project name")
+        return project
+
+    def project_dir(self, project: str | None) -> Path:
+        """Return the root directory for a given project (public API)."""
+        return self.entries_dir / self._resolve_project(project)
+
+    # Keep private alias for internal consistency
+    _project_dir = project_dir
+
+    @property
+    def convo_entries_dir(self) -> Path:
+        """Legacy accessor -- points to _global/convo for backward compat."""
+        return self._project_dir(None) / "convo"
+
+    @property
+    def collab_entries_dir(self) -> Path:
+        """Legacy accessor -- points to _global/collab for backward compat."""
+        return self._project_dir(None) / "collab"
+
+    # =========================================================================
+    # save / read / list entries
+    # =========================================================================
+
+    def save_entry(self, entry: Entry, *, project: str | None = None) -> Path:
         """Save an entry. If same date/slug exists, merge content and tags."""
-        date_dir = self.entries_dir / entry.date
+        resolved = self._resolve_project(project)
+        date_dir = self._project_dir(project) / entry.date
         date_dir.mkdir(parents=True, exist_ok=True)
         file_path = date_dir / f"{entry.slug}.md"
 
@@ -47,6 +84,7 @@ class Storage:
         fm = dict(merged_metadata)
         fm["date"] = entry.date
         fm["slug"] = entry.slug
+        fm["project"] = resolved
         self._ensure_contract("entry", fm)
         frontmatter = yaml.dump(fm, default_flow_style=False, allow_unicode=True).strip()
 
@@ -71,28 +109,55 @@ class Storage:
         # No frontmatter (backwards compatible)
         return Entry(date=date, slug=slug, content=raw)
 
-    def list_entries(self) -> list[Entry]:
-        """List all saved entries."""
-        entries = []
+    def list_entries(self, *, project: str | None = None) -> list[Entry]:
+        """List saved entries.
+
+        If *project* is given, scan only ``entries/{project}/``.
+        If *project* is None, scan all project directories.
+        """
         if not self.entries_dir.exists():
+            return []
+
+        if project is not None:
+            return self._list_entries_in_project(self._project_dir(project))
+
+        # project=None  ->  scan every project directory
+        entries: list[Entry] = []
+        for proj_dir in sorted(self.entries_dir.iterdir()):
+            if not proj_dir.is_dir():
+                continue
+            # "global" is for promoted entries, not regular project dir
+            if proj_dir.name == "global":
+                continue
+            entries.extend(self._list_entries_in_project(proj_dir))
+        return entries
+
+    def _list_entries_in_project(self, proj_dir: Path) -> list[Entry]:
+        """List regular entries inside a single project directory, skipping convo/collab."""
+        entries: list[Entry] = []
+        if not proj_dir.exists():
             return entries
-        for date_dir in sorted(self.entries_dir.iterdir()):
+        for date_dir in sorted(proj_dir.iterdir()):
             if not date_dir.is_dir():
                 continue
-            if date_dir.name in _FRAMEWORK_DIRS:
+            if date_dir.name in _RECORD_SUBDIRS:
                 continue
             for md_file in sorted(date_dir.glob("*.md")):
                 raw = md_file.read_text()
                 entries.append(self._parse_file(raw, date_dir.name, md_file.stem))
         return entries
 
-    def read_entry(self, date: str, slug: str) -> Entry | None:
+    def read_entry(self, date: str, slug: str, *, project: str | None = None) -> Entry | None:
         """Read a specific entry by date and slug."""
-        file_path = self.entries_dir / date / f"{slug}.md"
+        file_path = self._project_dir(project) / date / f"{slug}.md"
         if not file_path.exists():
             return None
         raw = file_path.read_text()
         return self._parse_file(raw, date, slug)
+
+    # =========================================================================
+    # convo records
+    # =========================================================================
 
     def save_convo_record(
         self,
@@ -101,13 +166,16 @@ class Storage:
         requested_by_user: bool = False,
         topic: str | None = None,
         created_at: datetime | None = None,
+        project: str | None = None,
     ) -> Entry:
-        """Save explicit conversation memory under entries/convo/YYYY-MM-DD/."""
+        """Save explicit conversation memory under entries/{project}/convo/YYYY-MM-DD/."""
+        resolved = self._resolve_project(project)
         now = created_at or datetime.now(timezone.utc)
         date = now.strftime("%Y-%m-%d")
         slug = f"convo-{now.strftime('%H%M%S%f')}"
 
-        date_dir = self.convo_entries_dir / date
+        convo_dir = self._project_dir(project) / "convo"
+        date_dir = convo_dir / date
         date_dir.mkdir(parents=True, exist_ok=True)
         file_path = date_dir / f"{slug}.md"
 
@@ -117,6 +185,7 @@ class Storage:
             "recordType": "convo",
             "requestedByUser": requested_by_user,
             "created_at": now.isoformat(),
+            "project": resolved,
         }
         if topic:
             metadata["topic"] = topic
@@ -126,13 +195,32 @@ class Storage:
         file_path.write_text(f"---\n{frontmatter}\n---\n\n{content}\n")
         return Entry(date=date, slug=slug, content=content, metadata=metadata)
 
-    def list_convo_entries(self) -> list[Entry]:
-        """List explicit convo records."""
-        entries: list[Entry] = []
-        if not self.convo_entries_dir.exists():
-            return entries
+    def list_convo_entries(self, *, project: str | None = None) -> list[Entry]:
+        """List explicit convo records.
 
-        for date_dir in sorted(self.convo_entries_dir.iterdir()):
+        If *project* is None, returns convo records from all projects (backward compat).
+        """
+        entries: list[Entry] = []
+
+        if project is not None:
+            convo_dir = self._project_dir(project) / "convo"
+            return self._list_convo_in_dir(convo_dir)
+
+        # Scan all projects
+        if not self.entries_dir.exists():
+            return entries
+        for proj_dir in sorted(self.entries_dir.iterdir()):
+            if not proj_dir.is_dir() or proj_dir.name == "global":
+                continue
+            convo_dir = proj_dir / "convo"
+            entries.extend(self._list_convo_in_dir(convo_dir))
+        return entries
+
+    def _list_convo_in_dir(self, convo_dir: Path) -> list[Entry]:
+        entries: list[Entry] = []
+        if not convo_dir.exists():
+            return entries
+        for date_dir in sorted(convo_dir.iterdir()):
             if not date_dir.is_dir():
                 continue
             for md_file in sorted(date_dir.glob("*.md")):
@@ -140,12 +228,17 @@ class Storage:
                 entries.append(self._parse_file(raw, date_dir.name, md_file.stem))
         return entries
 
-    def save_collab_record(self, record: CollabRecord) -> Path:
-        """Save a collab record under entries/collab/YYYY-MM-DD/."""
-        file_path = self._collab_path(record)
+    # =========================================================================
+    # collab records
+    # =========================================================================
+
+    def save_collab_record(self, record: CollabRecord, *, project: str | None = None) -> Path:
+        """Save a collab record under entries/{project}/collab/YYYY-MM-DD/."""
+        file_path = self._collab_path(record, project=project)
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
         metadata = record.model_dump(by_alias=True, mode="json")
+        metadata["project"] = self._resolve_project(project)
         self._ensure_contract("collab", metadata)
         frontmatter = yaml.dump(
             metadata,
@@ -158,16 +251,16 @@ class Storage:
         file_path.write_text(f"---\n{frontmatter}\n---\n\n{body}\n")
         return file_path
 
-    def read_collab_record(self, record_id: str) -> CollabRecord | None:
+    def read_collab_record(self, record_id: str, *, project: str | None = None) -> CollabRecord | None:
         """Read a collab record by record id."""
-        loaded = self._find_collab_file(record_id)
+        loaded = self._find_collab_file(record_id, project=project)
         if loaded is None:
             return None
         return loaded[0]
 
-    def read_collab_record_document(self, record_id: str) -> dict[str, str | dict[str, object]] | None:
+    def read_collab_record_document(self, record_id: str, *, project: str | None = None) -> dict[str, str | dict[str, object]] | None:
         """Read collab record with frontmatter and markdown body."""
-        loaded = self._find_collab_file(record_id)
+        loaded = self._find_collab_file(record_id, project=project)
         if loaded is None:
             return None
 
@@ -179,9 +272,9 @@ class Storage:
             "content": body,
         }
 
-    def collab_index_doc_info(self, record_id: str) -> dict[str, str] | None:
+    def collab_index_doc_info(self, record_id: str, *, project: str | None = None) -> dict[str, str] | None:
         """Return indexable document info for a collab record id."""
-        loaded = self._find_collab_file(record_id)
+        loaded = self._find_collab_file(record_id, project=project)
         if loaded is None:
             return None
         _record, file_path, _body = loaded
@@ -194,9 +287,10 @@ class Storage:
         status: str,
         version: int,
         author_agent: str | None = None,
+        project: str | None = None,
     ) -> CollabRecord | None:
         """Update status/version for an existing collab record."""
-        loaded = self._find_collab_file(record_id)
+        loaded = self._find_collab_file(record_id, project=project)
         if loaded is None:
             return None
 
@@ -208,21 +302,28 @@ class Storage:
             payload["authorAgent"] = author_agent
 
         updated = CollabRecord.model_validate(payload)
-        new_path = self._collab_path(updated)
-        self.save_collab_record(updated)
+        new_path = self._collab_path(updated, project=project)
+        self.save_collab_record(updated, project=project)
         if old_path != new_path and old_path.exists():
             old_path.unlink()
         return updated
 
-    def list_collab_records(self) -> list[CollabRecord]:
-        """List all collab records."""
+    def list_collab_records(self, *, project: str | None = None) -> list[CollabRecord]:
+        """List all collab records.
+
+        If *project* is None, returns collab records from all projects (backward compat).
+        """
         records: list[CollabRecord] = []
-        for file_path in self._iter_collab_files():
+        for file_path in self._iter_collab_files(project=project):
             loaded = self._load_collab_file(file_path)
             if loaded is None:
                 continue
             records.append(loaded[0])
         return records
+
+    # =========================================================================
+    # promoted entries (no project partitioning -- always global)
+    # =========================================================================
 
     def save_promoted_entry(self, *, item_id: str, source_record_id: str, content: str) -> Path:
         """Save promoted global entry for a promotion item."""
@@ -281,37 +382,89 @@ class Storage:
 
         return items
 
-    def list_indexable_documents(self) -> list[dict[str, str]]:
-        """Return indexable markdown documents with checksum and inferred record_type."""
+    # =========================================================================
+    # indexable documents
+    # =========================================================================
+
+    def list_indexable_documents(self, *, project: str | None = None) -> list[dict[str, str]]:
+        """Return indexable markdown documents with checksum, record_type, and project.
+
+        If *project* is given, returns only that project's docs.
+        If *project* is None, returns docs from all projects.
+        """
         docs: list[dict[str, str]] = []
 
-        if self.entries_dir.exists():
-            for date_dir in sorted(self.entries_dir.iterdir()):
+        if not self.entries_dir.exists():
+            return docs
+
+        project_dirs = self._collect_project_dirs(project)
+
+        for proj_name, proj_dir in project_dirs:
+            # Regular entries: entries/{project}/{date}/*.md
+            for date_dir in sorted(proj_dir.iterdir()):
                 if not date_dir.is_dir():
                     continue
-                if date_dir.name in _FRAMEWORK_DIRS:
+                if date_dir.name in _RECORD_SUBDIRS:
                     continue
                 for md_file in sorted(date_dir.glob("*.md")):
-                    docs.append(self._index_doc_info(md_file, record_type="entry"))
+                    info = self._index_doc_info(md_file, record_type="entry")
+                    info["project"] = proj_name
+                    docs.append(info)
 
-        if self.convo_entries_dir.exists():
-            for md_file in sorted(self.convo_entries_dir.glob("*/*.md")):
-                docs.append(self._index_doc_info(md_file, record_type="convo"))
+            # Convo: entries/{project}/convo/{date}/*.md
+            convo_dir = proj_dir / "convo"
+            if convo_dir.exists():
+                for md_file in sorted(convo_dir.glob("*/*.md")):
+                    info = self._index_doc_info(md_file, record_type="convo")
+                    info["project"] = proj_name
+                    docs.append(info)
 
-        if self.collab_entries_dir.exists():
-            for md_file in sorted(self.collab_entries_dir.glob("*/*.md")):
-                docs.append(self._index_doc_info(md_file, record_type="collab"))
+            # Collab: entries/{project}/collab/{date}/*.md
+            collab_dir = proj_dir / "collab"
+            if collab_dir.exists():
+                for md_file in sorted(collab_dir.glob("*/*.md")):
+                    info = self._index_doc_info(md_file, record_type="collab")
+                    info["project"] = proj_name
+                    docs.append(info)
 
-        promoted_dir = self.promoted_entries_dir / "promoted"
-        if promoted_dir.exists():
-            for md_file in sorted(promoted_dir.glob("*.md")):
-                docs.append(self._index_doc_info(md_file, record_type="promoted"))
+        # Promoted entries are always global (not project-partitioned)
+        if project is None:
+            promoted_dir = self.promoted_entries_dir / "promoted"
+            if promoted_dir.exists():
+                for md_file in sorted(promoted_dir.glob("*.md")):
+                    info = self._index_doc_info(md_file, record_type="promoted")
+                    info["project"] = "_global"
+                    docs.append(info)
 
         return docs
 
-    def _find_collab_file(self, record_id: str) -> tuple[CollabRecord, Path, str] | None:
+    def _collect_project_dirs(self, project: str | None) -> list[tuple[str, Path]]:
+        """Return (project_name, project_dir) pairs to scan."""
+        if project is not None:
+            proj_dir = self._project_dir(project)
+            if proj_dir.exists():
+                return [(self._resolve_project(project), proj_dir)]
+            return []
+
+        result: list[tuple[str, Path]] = []
+        if not self.entries_dir.exists():
+            return result
+        for d in sorted(self.entries_dir.iterdir()):
+            if not d.is_dir():
+                continue
+            # "global" is for promoted entries -- skip
+            if d.name == "global":
+                continue
+            result.append((d.name, d))
+        return result
+
+    # =========================================================================
+    # collab internal helpers
+    # =========================================================================
+
+    def _find_collab_file(self, record_id: str, *, project: str | None = None) -> tuple[CollabRecord, Path, str] | None:
         best: tuple[CollabRecord, Path, str] | None = None
-        for file_path in self._iter_collab_files():
+        for file_path in self._iter_collab_files(project=project):
             loaded = self._load_collab_file(file_path)
             if loaded is None:
                 continue
@@ -321,10 +474,28 @@ class Storage:
                     best = (record, file_path, body)
         return best
 
-    def _iter_collab_files(self) -> Iterator[Path]:
-        if not self.collab_entries_dir.exists():
-            return iter(())
-        return iter(sorted(self.collab_entries_dir.glob("*/*.md")))
+    def _iter_collab_files(self, *, project: str | None = None) -> Iterator[Path]:
+        """Iterate over collab markdown files.
+
+        If *project* is None, scan all project dirs for collab files (backward compat).
+        """
+        if project is not None:
+            collab_dir = self._project_dir(project) / "collab"
+            if not collab_dir.exists():
+                return iter(())
+            return iter(sorted(collab_dir.glob("*/*.md")))
+
+        # Scan all projects
+        files: list[Path] = []
+        if not self.entries_dir.exists():
+            return iter(files)
+        for proj_dir in sorted(self.entries_dir.iterdir()):
+            if not proj_dir.is_dir() or proj_dir.name == "global":
+                continue
+            collab_dir = proj_dir / "collab"
+            if collab_dir.exists():
+                files.extend(sorted(collab_dir.glob("*/*.md")))
+        return iter(files)
 
     @staticmethod
     def _load_collab_file(file_path: Path) -> tuple[CollabRecord, str] | None:
@@ -351,6 +522,8 @@ class Storage:
         metadata = Storage._parse_frontmatter_metadata(raw)
         if metadata is None:
             return None
+        # Strip storage-level keys not part of CollabRecord (extra="forbid").
+        metadata.pop("project", None)
         try:
             return CollabRecord.model_validate(metadata)
         except Exception:
@@ -371,10 +544,11 @@ class Storage:
         if not ok:
             raise ValueError(f"invalid {record_type} contract: {reason}")
 
-    def _collab_path(self, record: CollabRecord) -> Path:
+    def _collab_path(self, record: CollabRecord, *, project: str | None = None) -> Path:
         day = record.created_at.date().isoformat()
         safe_task = re.sub(r'[^a-zA-Z0-9_-]', '-', record.task_id)
-        return self.collab_entries_dir / day / f"{safe_task}-{record.status}-{record.record_id}.md"
+        collab_dir = self._project_dir(project) / "collab"
+        return collab_dir / day / f"{safe_task}-{record.status}-{record.record_id}.md"
 
     def _index_doc_info(self, file_path: Path, *, record_type: str) -> dict[str, str]:
         rel = file_path.relative_to(self.data_dir).as_posix()

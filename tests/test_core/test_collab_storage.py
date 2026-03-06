@@ -28,7 +28,7 @@ def test_save_collab_record_to_collab_directory(tmp_path: Path) -> None:
 
     path = storage.save_collab_record(_record())
 
-    assert "entries/collab/2026-03-05" in str(path)
+    assert "entries/_global/collab/2026-03-05" in str(path)
     assert path.read_text().startswith("---")
 
 

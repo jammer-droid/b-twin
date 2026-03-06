@@ -8,6 +8,7 @@ import json
 import os
 from collections import OrderedDict
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, Header, Request
@@ -17,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from btwin.config import BTwinConfig, load_config
 from btwin.core.agent_registry import AgentRegistry
+from btwin.core.btwin import BTwin
 from btwin.core.audit import AuditLogger
 from btwin.core.collab_models import CollabRecord, CollabStatus, generate_record_id
 from btwin.core.gate import apply_transition, validate_actor, validate_promotion_approval
@@ -44,6 +46,7 @@ class CreateCollabRecordRequest(BaseModel):
     status: CollabStatus
     author_agent: str = Field(alias="authorAgent")
     created_at: str = Field(alias="createdAt")
+    project_id: str | None = Field(default=None, alias="projectId")
 
 
 class HandoffRequest(BaseModel):
@@ -96,6 +99,57 @@ class IndexerActionRequest(BaseModel):
     actor_agent: str = Field(alias="actorAgent")
     limit: int | None = Field(default=None, ge=1, le=1000)
     doc_id: str | None = Field(default=None, alias="docId")
+
+
+# ---------------------------------------------------------------------------
+# Proxy-facing entry/session models
+# ---------------------------------------------------------------------------
+
+
+class EntryRecordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    content: str
+    topic: str | None = None
+    project_id: str | None = Field(default=None, alias="projectId")
+
+
+class EntrySearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    query: str
+    n_results: int = Field(default=5, alias="nResults", ge=1, le=100)
+    project_id: str | None = Field(default=None, alias="projectId")
+    record_type: str | None = Field(default=None, alias="recordType")
+    scope: Literal["project", "all"] = "project"
+
+
+class ConvoRecordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    content: str
+    requested_by_user: bool = Field(default=False, alias="requestedByUser")
+    topic: str | None = None
+    project_id: str | None = Field(default=None, alias="projectId")
+
+
+class EntryImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    content: str
+    date: str
+    slug: str
+    tags: list[str] | None = None
+    source_path: str | None = Field(default=None, alias="sourcePath")
+    project_id: str | None = Field(default=None, alias="projectId")
+
+
+class SessionStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    topic: str | None = None
+
+
+class SessionEndRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    summary: str | None = None
+    slug: str | None = None
+    project_id: str | None = Field(default=None, alias="projectId")
 
 
 def create_collab_app(
@@ -151,6 +205,15 @@ def create_collab_app(
         if _indexer_cache is None:
             _indexer_cache = CoreIndexer(data_dir=data_dir)
         return _indexer_cache
+
+    _btwin_cache: BTwin | None = None
+
+    def _btwin() -> BTwin:
+        nonlocal _btwin_cache
+        if _btwin_cache is None:
+            config = BTwinConfig(data_dir=data_dir)
+            _btwin_cache = BTwin(config)
+        return _btwin_cache
 
     def _error(status_code: int, error_code: str, message: str, details: dict[str, object] | None = None) -> JSONResponse:
         return JSONResponse(
@@ -775,7 +838,7 @@ def create_collab_app(
         if payload.record_type != "collab":
             return _error(422, "INVALID_SCHEMA", "recordType must be collab")
 
-        request_payload = payload.model_dump(by_alias=True, mode="json")
+        request_payload = payload.model_dump(by_alias=True, mode="json", exclude={"project_id"})
         request_hash = _payload_hash(request_payload)
 
         if idempotency_key:
@@ -836,7 +899,7 @@ def create_collab_app(
         except ValidationError as exc:
             return _error(422, "INVALID_SCHEMA", "collab record validation failed", {"issues": exc.errors()})
 
-        storage.save_collab_record(record)
+        storage.save_collab_record(record, project=payload.project_id)
 
         if idempotency_key:
             idempotency_cache[idempotency_key] = {
@@ -857,8 +920,8 @@ def create_collab_app(
         )
 
     @app.get("/api/collab/records")
-    def list_records(status: str | None = None, authorAgent: str | None = None, taskId: str | None = None):
-        records = storage.list_collab_records()
+    def list_records(status: str | None = None, authorAgent: str | None = None, taskId: str | None = None, projectId: str | None = None):
+        records = storage.list_collab_records(project=projectId)
         filtered: list[dict[str, object]] = []
 
         for r in records:
@@ -1182,11 +1245,11 @@ def create_collab_app(
         return {"items": storage.list_promoted_entries()}
 
     @app.get("/api/indexer/status")
-    def indexer_status(x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+    def indexer_status(projectId: str | None = None, x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
         auth_error = _require_admin_token_if_configured(x_admin_token)
         if auth_error is not None:
             return auth_error
-        return _indexer().status_summary()
+        return _indexer().status_summary(project=projectId)
 
     @app.get("/api/indexer/kpi")
     def indexer_kpi(x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
@@ -1196,7 +1259,7 @@ def create_collab_app(
         return _indexer().kpi_summary()
 
     @app.get("/api/ops/dashboard")
-    def ops_dashboard(x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+    def ops_dashboard(projectId: str | None = None, x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
         auth_error = _require_admin_token_if_configured(x_admin_token)
         if auth_error is not None:
             return auth_error
@@ -1215,7 +1278,7 @@ def create_collab_app(
                 "degraded": runtime_adapters.degraded,
                 "degradedReason": runtime_adapters.degraded_reason,
             },
-            "indexerStatus": idx.status_summary(),
+            "indexerStatus": idx.status_summary(project=projectId),
             "failureQueue": idx.failure_queue(limit=50),
             "repairHistory": idx.repair_history(limit=20),
             "gateViolations": gate_violations[-20:],
@@ -1340,6 +1403,80 @@ loadDashboard();
 
         summary = registry.reload(payload.override_path)
         return {"ok": True, **summary}
+
+    # -----------------------------------------------------------------------
+    # Proxy-facing entry/session endpoints (Part B)
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/entries/record")
+    def entry_record(body: EntryRecordRequest):
+        result = _btwin().record(
+            content=body.content,
+            topic=body.topic,
+            project=body.project_id,
+        )
+        return result
+
+    @app.post("/api/entries/search")
+    def entry_search(body: EntrySearchRequest):
+        btwin = _btwin()
+        filters = {"record_type": body.record_type} if body.record_type else None
+        if body.scope == "project" and body.project_id is not None:
+            results = btwin.search(
+                body.query,
+                n_results=body.n_results,
+                filters=filters,
+                project=body.project_id,
+            )
+        else:
+            results = btwin.search(
+                body.query,
+                n_results=body.n_results,
+                filters=filters,
+            )
+        return {"results": results}
+
+    @app.post("/api/entries/convo-record")
+    def entry_convo_record(body: ConvoRecordRequest):
+        result = _btwin().record_convo(
+            content=body.content,
+            requested_by_user=body.requested_by_user,
+            topic=body.topic,
+            project=body.project_id,
+        )
+        return result
+
+    @app.post("/api/entries/import")
+    def entry_import(body: EntryImportRequest):
+        result = _btwin().import_entry(
+            content=body.content,
+            date=body.date,
+            slug=body.slug,
+            tags=body.tags,
+            source_path=body.source_path,
+            project=body.project_id,
+        )
+        return result
+
+    @app.post("/api/sessions/start")
+    def session_start(body: SessionStartRequest):
+        result = _btwin().start_session(topic=body.topic)
+        return result
+
+    @app.post("/api/sessions/end")
+    def session_end(body: SessionEndRequest):
+        result = _btwin().end_session(
+            summary=body.summary,
+            slug=body.slug,
+            project=body.project_id,
+        )
+        if result is None:
+            return JSONResponse(status_code=200, content=None)
+        return result
+
+    @app.get("/api/sessions/status")
+    def session_status():
+        return _btwin().session_status()
 
     return app
 

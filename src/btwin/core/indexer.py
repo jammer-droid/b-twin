@@ -24,7 +24,7 @@ class CoreIndexer:
         self._repair_history_path = data_dir / "indexer_repair_history.jsonl"
         self._kpi = self._load_kpi()
 
-    def mark_pending(self, *, doc_id: str, path: str, record_type: RecordType, checksum: str) -> IndexEntry:
+    def mark_pending(self, *, doc_id: str, path: str, record_type: RecordType, checksum: str, project: str | None = None) -> IndexEntry:
         existing = self.manifest.get(doc_id)
         status: IndexStatus = "pending"
         if existing is not None and existing.checksum != checksum:
@@ -41,6 +41,7 @@ class CoreIndexer:
             record_type=record_type,
             checksum=checksum,
             status=status,
+            project=project,
             pending_since=pending_since,
         )
 
@@ -95,6 +96,7 @@ class CoreIndexer:
                         "record_type": item.record_type,
                         "path": item.path,
                         "doc_version": str(item.doc_version),
+                        "project": item.project or "_global",
                     },
                 )
                 self.manifest.mark_status(item.doc_id, "indexed", error=None, clear_pending_since=True)
@@ -128,6 +130,7 @@ class CoreIndexer:
                 path=doc["path"],
                 record_type=doc["record_type"],
                 checksum=doc["checksum"],
+                project=doc.get("project"),
             )
 
         for status in ("pending", "indexed", "stale", "failed"):
@@ -223,6 +226,7 @@ class CoreIndexer:
                     "record_type": updated.record_type,
                     "path": updated.path,
                     "doc_version": str(updated.doc_version),
+                    "project": updated.project or "_global",
                 },
             )
             self.manifest.mark_status(updated.doc_id, "indexed", error=None, clear_pending_since=True)
@@ -260,13 +264,31 @@ class CoreIndexer:
             "repair_avg_duration_ms": repair_avg_duration,
         }
 
-    def status_summary(self) -> dict[str, int]:
-        return self.manifest.summary()
+    def status_summary(self, *, project: str | None = None) -> dict[str, int]:
+        if project is None:
+            return self.manifest.summary()
 
-    def failure_queue(self, limit: int = 50) -> list[dict[str, object]]:
+        counts: dict[str, int] = {
+            "total": 0,
+            "pending": 0,
+            "indexed": 0,
+            "stale": 0,
+            "failed": 0,
+            "deleted": 0,
+        }
+        for item in self.manifest.list_all():
+            if item.project != project:
+                continue
+            counts["total"] += 1
+            counts[item.status] = counts.get(item.status, 0) + 1
+        return counts
+
+    def failure_queue(self, limit: int = 50, *, project: str | None = None) -> list[dict[str, object]]:
         if limit <= 0:
             return []
         items = self.manifest.list_by_status("failed") + self.manifest.list_by_status("stale")
+        if project is not None:
+            items = [item for item in items if item.project == project]
         items = items[:limit]
         return [
             {

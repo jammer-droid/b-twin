@@ -6,7 +6,7 @@ def test_save_convo_record_writes_under_convo_dir(tmp_path):
 
     entry = storage.save_convo_record(content="기억해줘", requested_by_user=True)
 
-    convo_path = tmp_path / "entries" / "convo" / entry.date / f"{entry.slug}.md"
+    convo_path = tmp_path / "entries" / "_global" / "convo" / entry.date / f"{entry.slug}.md"
     assert convo_path.exists()
     assert entry.metadata.get("recordType") == "convo"
     assert entry.metadata.get("requestedByUser") is True

@@ -31,7 +31,7 @@ def test_indexer_refresh_command_indexes_pending_doc(tmp_path, monkeypatch):
 
     storage = Storage(data_dir)
     entry = storage.save_convo_record(content="cli refresh", requested_by_user=True)
-    path = data_dir / "entries" / "convo" / entry.date / f"{entry.slug}.md"
+    path = data_dir / "entries" / "_global" / "convo" / entry.date / f"{entry.slug}.md"
     rel = path.relative_to(data_dir).as_posix()
 
     manifest = IndexManifest(data_dir / "index_manifest.yaml")

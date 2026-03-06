@@ -1,7 +1,9 @@
 """B-TWIN CLI — command-line interface."""
 
+import json
 import os
 import re
+import subprocess
 from pathlib import Path
 
 import typer
@@ -55,6 +57,93 @@ def _atomic_write_yaml(path: Path, data: dict[str, object]) -> None:
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     tmp_path.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
     tmp_path.replace(path)
+
+
+def _detect_project_name() -> str:
+    """Auto-detect project name from git remote or current directory name."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            url = result.stdout.strip()
+            # Handle both HTTPS and SSH URLs:
+            #   https://github.com/user/repo.git  ->  repo
+            #   git@github.com:user/repo.git      ->  repo
+            name = url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+            if name.endswith(".git"):
+                name = name[:-4]
+            if name:
+                return name
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return Path.cwd().name
+
+
+@app.command()
+def init(
+    project_name: str = typer.Argument(None, help="Project name (auto-detected from git if omitted)"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing .mcp.json"),
+):
+    """Initialize B-TWIN for the current project directory.
+
+    Creates a .mcp.json file that configures Claude Code to use the B-TWIN MCP proxy
+    with the detected/specified project name.
+    """
+    if project_name is None:
+        project_name = _detect_project_name()
+
+    mcp_json_path = Path.cwd() / ".mcp.json"
+
+    if mcp_json_path.exists() and not force:
+        console.print(
+            f"[yellow].mcp.json already exists at {mcp_json_path}[/yellow]\n"
+            "Use [bold]--force[/bold] to overwrite."
+        )
+        raise typer.Exit(1)
+
+    mcp_config = {
+        "mcpServers": {
+            "btwin": {
+                "command": "~/.btwin/proxy.sh",
+                "args": ["--project", project_name],
+            }
+        }
+    }
+
+    mcp_json_path.write_text(json.dumps(mcp_config, indent=2) + "\n")
+
+    console.print(f"[green]Created .mcp.json for project [bold]{project_name}[/bold][/green]")
+    console.print(
+        "\nNext steps:\n"
+        "  1. Start the B-TWIN API server: [bold]btwin serve-api[/bold]\n"
+        "  2. Claude Code will auto-detect .mcp.json and connect via the proxy.\n"
+    )
+
+
+@app.command("mcp-proxy")
+def mcp_proxy(
+    project: str = typer.Option(..., help="Project name to bind"),
+    backend: str = typer.Option("http://localhost:8787", help="Backend API URL"),
+):
+    """Start B-TWIN MCP proxy server (stdio transport).
+
+    Lightweight proxy that forwards MCP tool calls to the B-TWIN HTTP API
+    with automatic project injection.
+    """
+    from rich.console import Console as _ErrConsole
+
+    _ErrConsole(stderr=True).print(
+        f"[bold]Starting B-TWIN MCP Proxy: project={project} backend={backend}[/bold]"
+    )
+    from btwin.mcp import proxy
+
+    proxy._project = project
+    proxy._backend = backend
+    proxy.mcp.run(transport="stdio")
 
 
 @app.command()

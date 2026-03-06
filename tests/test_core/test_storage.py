@@ -14,7 +14,7 @@ def test_save_entry(tmp_path):
     )
     saved_path = storage.save_entry(entry)
     assert saved_path.exists()
-    assert saved_path == tmp_path / "entries" / "2026-03-02" / "test-entry.md"
+    assert saved_path == tmp_path / "entries" / "_global" / "2026-03-02" / "test-entry.md"
     raw = saved_path.read_text()
     assert "---" in raw
     assert "# Test Entry" in raw
@@ -97,8 +97,8 @@ def test_list_entries_parses_frontmatter(tmp_path):
 def test_read_entry_without_frontmatter(tmp_path):
     """Backwards compatibility: read old entries without frontmatter."""
     storage = Storage(data_dir=tmp_path)
-    # Manually write a file without frontmatter (old format)
-    date_dir = tmp_path / "entries" / "2026-03-01"
+    # Manually write a file without frontmatter (old format) under _global
+    date_dir = tmp_path / "entries" / "_global" / "2026-03-01"
     date_dir.mkdir(parents=True)
     (date_dir / "old-entry.md").write_text("# Old Entry\n\nNo frontmatter.")
     entry = storage.read_entry("2026-03-01", "old-entry")
@@ -190,10 +190,10 @@ def test_save_entry_no_collision_works_as_before(tmp_path):
 
 
 def test_list_entries_excludes_framework_dirs(tmp_path):
-    """list_entries() must skip convo/, collab/, and global/ subdirectories."""
+    """list_entries() must skip convo/, collab/ subdirs within projects and global/ at top level."""
     storage = Storage(data_dir=tmp_path)
 
-    # Regular entry
+    # Regular entry (saved under _global project)
     storage.save_entry(Entry(
         date="2026-03-05",
         slug="real-note",
@@ -201,13 +201,20 @@ def test_list_entries_excludes_framework_dirs(tmp_path):
         metadata={"topic": "test"},
     ))
 
-    # Files under framework dirs that should be excluded
-    for framework_dir in ("convo", "collab", "global"):
-        dir_path = tmp_path / "entries" / framework_dir / "2026-03-05"
+    # Files under framework dirs within project that should be excluded
+    for framework_dir in ("convo", "collab"):
+        dir_path = tmp_path / "entries" / "_global" / framework_dir / "2026-03-05"
         dir_path.mkdir(parents=True, exist_ok=True)
         (dir_path / "should-not-appear.md").write_text(
             "---\nslug: should-not-appear\n---\n\nHidden content."
         )
+
+    # Global promoted dir should also be excluded
+    dir_path = tmp_path / "entries" / "global" / "2026-03-05"
+    dir_path.mkdir(parents=True, exist_ok=True)
+    (dir_path / "should-not-appear.md").write_text(
+        "---\nslug: should-not-appear\n---\n\nHidden content."
+    )
 
     entries = storage.list_entries()
     slugs = [e.slug for e in entries]
