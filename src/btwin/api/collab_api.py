@@ -314,6 +314,52 @@ def create_collab_app(
     def foundation_ui_shell() -> str:
         return _foundation_ui_shell_html()
 
+    def _placeholder_ui_html(title: str, description: str) -> str:
+        return f"""
+<!doctype html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>{title}</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; color: #0f172a; }}
+    .panel {{ max-width: 720px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }}
+    a {{ color: #0f172a; }}
+    p {{ color: #475569; }}
+  </style>
+</head>
+<body>
+  <div class=\"panel\">
+    <h1>{title}</h1>
+    <p>{description}</p>
+    <p><a href=\"/ui\">Back to shared shell</a></p>
+  </div>
+</body>
+</html>
+        """
+
+    @app.get("/ui/workflows", response_class=HTMLResponse)
+    def workflows_ui_placeholder() -> str:
+        return _placeholder_ui_html(
+            "Workflows",
+            "Workflow orchestration UI placeholder for the common foundation shell.",
+        )
+
+    @app.get("/ui/sources", response_class=HTMLResponse)
+    def sources_ui_placeholder() -> str:
+        return _placeholder_ui_html(
+            "Sources",
+            "Source inventory UI placeholder for the common foundation shell.",
+        )
+
+    @app.get("/ui/summary", response_class=HTMLResponse)
+    def summary_ui_placeholder() -> str:
+        return _placeholder_ui_html(
+            "Summary",
+            "Summary UI placeholder for the common foundation shell.",
+        )
+
     def _ui_html() -> str:
         return """
 <!doctype html>
