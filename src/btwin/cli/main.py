@@ -59,23 +59,15 @@ def _atomic_write_yaml(path: Path, data: dict[str, object]) -> None:
 
 @app.command()
 def setup():
-    """Interactive setup — configure API key and preferences."""
+    """Initialize B-TWIN data directory and config."""
     config_path = _config_path()
     config_dir = config_path.parent
     config_dir.mkdir(parents=True, exist_ok=True)
 
     console.print("[bold]B-TWIN Setup[/bold]\n")
 
-    provider = typer.prompt("LLM provider", default="anthropic")
-    model = typer.prompt("Model name", default="claude-haiku-4-5-20251001")
-    api_key = typer.prompt("API key", hide_input=True)
-
-    config_data = {
-        "llm": {
-            "provider": provider,
-            "model": model,
-            "api_key": api_key,
-        },
+    config_data: dict[str, object] = {
+        "llm": {"provider": "anthropic", "model": "claude-haiku-4-5-20251001"},
         "session": {"timeout_minutes": 10},
         "promotion": {"enabled": True, "schedule": "0 9,21 * * *"},
         "data_dir": str(Path.home() / ".btwin"),
@@ -83,7 +75,14 @@ def setup():
 
     _atomic_write_yaml(config_path, config_data)
 
-    console.print(f"\n[green]Config saved to {config_path}[/green]")
+    console.print(f"[green]Config saved to {config_path}[/green]\n")
+    console.print(
+        "Next steps:\n"
+        "  1. [bold]btwin serve[/bold]        — Start MCP server for Claude Code / Codex CLI\n"
+        "  2. [bold]btwin serve-api[/bold]     — Start dashboard on http://127.0.0.1:8787\n"
+        "  3. [bold]btwin search[/bold] <query> — Search past entries\n"
+        "  4. [bold]btwin record[/bold] <text>  — Record a note\n"
+    )
 
 
 @app.command()
@@ -142,10 +141,18 @@ def record(content: str, topic: str = typer.Option(None, help="Topic slug")):
 
 @app.command()
 def chat():
-    """Interactive chat with B-TWIN (REPL mode)."""
+    """Interactive chat with B-TWIN (REPL mode). Requires API key."""
     from btwin.core.btwin import BTwin
 
     config = _get_config()
+    if not config.llm.api_key:
+        console.print(
+            "[red]API key not configured.[/red]\n"
+            "Chat mode requires a direct LLM API key.\n"
+            "Run [bold]btwin setup[/bold] and enable API key, "
+            "or use B-TWIN via MCP with Claude/Codex instead."
+        )
+        raise typer.Exit(1)
     twin = BTwin(config)
 
     console.print("[bold]B-TWIN Chat[/bold] — Type /quit to exit, /end to end session.\n")
