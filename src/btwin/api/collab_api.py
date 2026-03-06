@@ -8,6 +8,7 @@ import json
 import os
 from collections import OrderedDict
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, Header, Request
@@ -117,7 +118,7 @@ class EntrySearchRequest(BaseModel):
     query: str
     n_results: int = Field(default=5, alias="nResults", ge=1, le=100)
     project_id: str | None = Field(default=None, alias="projectId")
-    scope: str = "project"  # "project" or "all"
+    scope: Literal["project", "all"] = "project"
 
 
 class ConvoRecordRequest(BaseModel):
