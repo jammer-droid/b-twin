@@ -136,6 +136,53 @@ class CoreIndexer:
 
         return self.refresh()
 
+    def verify_doc_integrity(self, doc_id: str) -> dict[str, object]:
+        item = self.manifest.get(doc_id)
+        if item is None:
+            return {
+                "ok": False,
+                "doc_id": doc_id,
+                "reason": "manifest_missing",
+                "status": None,
+                "checksum_match": False,
+                "vector_present": False,
+            }
+
+        source_path = self.data_dir / item.path
+        if not source_path.exists():
+            return {
+                "ok": False,
+                "doc_id": doc_id,
+                "reason": "source_missing",
+                "status": item.status,
+                "checksum_match": False,
+                "vector_present": False,
+            }
+
+        current_checksum = self._sha256(source_path)
+        checksum_match = current_checksum == item.checksum
+        vector_present = self.vector_store.has(doc_id)
+        status_ok = item.status == "indexed"
+        ok = status_ok and checksum_match and vector_present
+
+        reason = "healthy"
+        if not ok:
+            if not status_ok:
+                reason = "status_not_indexed"
+            elif not checksum_match:
+                reason = "checksum_mismatch"
+            elif not vector_present:
+                reason = "vector_missing"
+
+        return {
+            "ok": ok,
+            "doc_id": doc_id,
+            "reason": reason,
+            "status": item.status,
+            "checksum_match": checksum_match,
+            "vector_present": vector_present,
+        }
+
     def repair(self, doc_id: str) -> dict[str, object]:
         started = time.perf_counter()
         self._kpi["repair_attempts"] += 1

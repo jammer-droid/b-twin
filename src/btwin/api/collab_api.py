@@ -165,6 +165,51 @@ def create_collab_app(
             and record.author_agent == req.author_agent
         )
 
+    def _enforce_integrity_gate(*, record_id: str, endpoint: str, actor: str) -> JSONResponse | None:
+        doc = storage.collab_index_doc_info(record_id)
+        if doc is None:
+            return _error(404, "RECORD_NOT_FOUND", "collab record not found", {"recordId": record_id})
+
+        idx = _indexer()
+        idx.mark_pending(
+            doc_id=doc["doc_id"],
+            path=doc["path"],
+            record_type="collab",
+            checksum=doc["checksum"],
+        )
+
+        integrity = idx.verify_doc_integrity(doc["doc_id"])
+        repair_attempts = 0
+        max_retries = 2
+        last_repair: dict[str, object] | None = None
+
+        while not integrity.get("ok") and repair_attempts < max_retries:
+            last_repair = idx.repair(doc["doc_id"])
+            repair_attempts += 1
+            integrity = idx.verify_doc_integrity(doc["doc_id"])
+
+        if integrity.get("ok"):
+            return None
+
+        details = {
+            "recordId": record_id,
+            "docId": doc["doc_id"],
+            "integrity": integrity,
+            "repairAttempts": repair_attempts,
+            "lastRepair": last_repair or {},
+        }
+        _audit(
+            "gate_rejected",
+            {
+                "endpoint": endpoint,
+                "errorCode": "INTEGRITY_GATE_FAILED",
+                "recordId": record_id,
+                "actorAgent": actor,
+                "details": details,
+            },
+        )
+        return _error(409, "INTEGRITY_GATE_FAILED", "index integrity gate failed", details)
+
     @app.exception_handler(RequestValidationError)
     async def _request_validation_handler(_request: Request, exc: RequestValidationError):
         return _error(
@@ -823,6 +868,10 @@ def create_collab_app(
                 {"recordOwner": record.author_agent, "fromAgent": payload.from_agent},
             )
 
+        integrity_error = _enforce_integrity_gate(record_id=payload.record_id, endpoint="/api/collab/handoff", actor=actor)
+        if integrity_error is not None:
+            return integrity_error
+
         decision = apply_transition(record, "handed_off", payload.expected_version)
         if not decision.ok:
             _audit(
@@ -902,6 +951,10 @@ def create_collab_app(
                 "actor is not current record owner",
                 {"recordOwner": record.author_agent, "actorAgent": actor},
             )
+
+        integrity_error = _enforce_integrity_gate(record_id=payload.record_id, endpoint="/api/collab/complete", actor=actor)
+        if integrity_error is not None:
+            return integrity_error
 
         decision = apply_transition(record, "completed", payload.expected_version)
         if not decision.ok:

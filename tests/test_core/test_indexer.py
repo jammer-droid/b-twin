@@ -179,6 +179,40 @@ def test_kpi_summary_ignores_non_finite_kpi_float_values(tmp_path):
     assert kpi["repair_avg_duration_ms"] == 0.0
 
 
+def test_verify_doc_integrity_reports_checksum_mismatch(tmp_path):
+    idx = CoreIndexer(data_dir=tmp_path)
+    entry = idx.storage.save_convo_record(content="v1", requested_by_user=True)
+    file_path = idx.storage.convo_entries_dir / entry.date / f"{entry.slug}.md"
+    rel = str(file_path.relative_to(tmp_path))
+
+    idx.mark_pending(doc_id=rel, path=rel, record_type="convo", checksum=_sha256_for(file_path))
+    idx.refresh(limit=10)
+
+    file_path.write_text(file_path.read_text(encoding="utf-8") + "\nchanged\n", encoding="utf-8")
+
+    integrity = idx.verify_doc_integrity(rel)
+
+    assert integrity["ok"] is False
+    assert integrity["reason"] == "checksum_mismatch"
+    assert integrity["status"] == "indexed"
+
+
+def test_verify_doc_integrity_reports_vector_missing(tmp_path):
+    idx = CoreIndexer(data_dir=tmp_path)
+    entry = idx.storage.save_convo_record(content="v1", requested_by_user=True)
+    file_path = idx.storage.convo_entries_dir / entry.date / f"{entry.slug}.md"
+    rel = str(file_path.relative_to(tmp_path))
+
+    idx.mark_pending(doc_id=rel, path=rel, record_type="convo", checksum=_sha256_for(file_path))
+    idx.refresh(limit=10)
+    idx.vector_store.delete(rel)
+
+    integrity = idx.verify_doc_integrity(rel)
+
+    assert integrity["ok"] is False
+    assert integrity["reason"] == "vector_missing"
+
+
 def test_kpi_summary_reports_sync_gap_and_repair_metrics(tmp_path, monkeypatch):
     idx = CoreIndexer(data_dir=tmp_path)
     ok_entry = idx.storage.save_convo_record(content="repair ok", requested_by_user=True)

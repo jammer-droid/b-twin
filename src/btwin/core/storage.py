@@ -179,6 +179,14 @@ class Storage:
             "content": body,
         }
 
+    def collab_index_doc_info(self, record_id: str) -> dict[str, str] | None:
+        """Return indexable document info for a collab record id."""
+        loaded = self._find_collab_file(record_id)
+        if loaded is None:
+            return None
+        _record, file_path, _body = loaded
+        return self._index_doc_info(file_path, record_type="collab")
+
     def update_collab_record(
         self,
         record_id: str,

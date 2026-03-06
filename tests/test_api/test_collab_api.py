@@ -112,6 +112,45 @@ def test_handoff_and_complete_gate_flow(tmp_path: Path):
     assert complete.json()["version"] == 3
 
 
+def test_handoff_integrity_gate_retries_repair_and_fails_safe(tmp_path: Path, monkeypatch):
+    client = _client(tmp_path)
+    created = client.post("/api/collab/records", json=_payload(authorAgent="research-bot")).json()
+
+    calls = {"count": 0}
+
+    def always_unhealthy(self, doc_id: str):
+        return {
+            "ok": False,
+            "doc_id": doc_id,
+            "reason": "status_not_indexed",
+            "status": "failed",
+            "checksum_match": False,
+            "vector_present": False,
+        }
+
+    def fail_repair(self, doc_id: str):
+        calls["count"] += 1
+        return {"ok": False, "doc_id": doc_id, "status": "failed", "error": "boom"}
+
+    monkeypatch.setattr("btwin.api.collab_api.CoreIndexer.verify_doc_integrity", always_unhealthy)
+    monkeypatch.setattr("btwin.api.collab_api.CoreIndexer.repair", fail_repair)
+
+    res = client.post(
+        "/api/collab/handoff",
+        json={
+            "recordId": created["recordId"],
+            "expectedVersion": 1,
+            "fromAgent": "research-bot",
+            "toAgent": "codex-code",
+        },
+        headers={"X-Actor-Agent": "research-bot"},
+    )
+
+    assert res.status_code == 409
+    assert res.json()["errorCode"] == "INTEGRITY_GATE_FAILED"
+    assert calls["count"] == 2
+
+
 def test_complete_idempotent_retry_even_with_old_expected_version(tmp_path: Path):
     client = _client(tmp_path)
     created = client.post("/api/collab/records", json=_payload(status="completed")).json()
@@ -128,6 +167,57 @@ def test_complete_idempotent_retry_even_with_old_expected_version(tmp_path: Path
 
     assert retry.status_code == 200
     assert retry.json()["idempotent"] is True
+
+
+def test_complete_idempotent_path_runs_integrity_repair_when_unhealthy(tmp_path: Path, monkeypatch):
+    client = _client(tmp_path)
+    created = client.post("/api/collab/records", json=_payload(status="completed")).json()
+
+    state = {"calls": 0}
+
+    def flaky_integrity(self, doc_id: str):
+        state["calls"] += 1
+        if state["calls"] == 1:
+            return {
+                "ok": False,
+                "doc_id": doc_id,
+                "reason": "vector_missing",
+                "status": "indexed",
+                "checksum_match": True,
+                "vector_present": False,
+            }
+        return {
+            "ok": True,
+            "doc_id": doc_id,
+            "reason": "healthy",
+            "status": "indexed",
+            "checksum_match": True,
+            "vector_present": True,
+        }
+
+    monkeypatch.setattr("btwin.api.collab_api.CoreIndexer.verify_doc_integrity", flaky_integrity)
+
+    repaired = {"count": 0}
+
+    def ok_repair(self, doc_id: str):
+        repaired["count"] += 1
+        return {"ok": True, "doc_id": doc_id, "status": "indexed"}
+
+    monkeypatch.setattr("btwin.api.collab_api.CoreIndexer.repair", ok_repair)
+
+    retry = client.post(
+        "/api/collab/complete",
+        json={
+            "recordId": created["recordId"],
+            "expectedVersion": 1,
+            "actorAgent": "codex-code",
+        },
+        headers={"X-Actor-Agent": "codex-code"},
+    )
+
+    assert retry.status_code == 200
+    assert retry.json()["idempotent"] is True
+    assert repaired["count"] == 1
 
 
 def test_handoff_rejects_concurrent_modification(tmp_path: Path):
