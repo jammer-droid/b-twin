@@ -312,7 +312,7 @@ class CoreIndexer:
                 else:
                     parsed = float(value)
                     merged[key] = parsed if math.isfinite(parsed) else default_value
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 merged[key] = default_value
         return merged
 

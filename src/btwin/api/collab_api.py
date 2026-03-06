@@ -144,8 +144,13 @@ def create_collab_app(
             )
         )
 
+    _indexer_cache: CoreIndexer | None = None
+
     def _indexer() -> CoreIndexer:
-        return CoreIndexer(data_dir=data_dir)
+        nonlocal _indexer_cache
+        if _indexer_cache is None:
+            _indexer_cache = CoreIndexer(data_dir=data_dir)
+        return _indexer_cache
 
     def _error(status_code: int, error_code: str, message: str, details: dict[str, object] | None = None) -> JSONResponse:
         return JSONResponse(
@@ -193,12 +198,19 @@ def create_collab_app(
             return _error(404, "RECORD_NOT_FOUND", "collab record not found", {"recordId": record_id})
 
         idx = _indexer()
-        idx.mark_pending(
-            doc_id=doc["doc_id"],
-            path=doc["path"],
-            record_type="collab",
-            checksum=doc["checksum"],
+        existing = idx.manifest.get(doc["doc_id"])
+        already_healthy = (
+            existing is not None
+            and existing.status == "indexed"
+            and existing.checksum == doc["checksum"]
         )
+        if not already_healthy:
+            idx.mark_pending(
+                doc_id=doc["doc_id"],
+                path=doc["path"],
+                record_type="collab",
+                checksum=doc["checksum"],
+            )
 
         integrity = idx.verify_doc_integrity(doc["doc_id"])
         repair_attempts = 0

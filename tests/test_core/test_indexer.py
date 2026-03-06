@@ -213,6 +213,34 @@ def test_verify_doc_integrity_reports_vector_missing(tmp_path):
     assert integrity["reason"] == "vector_missing"
 
 
+def test_load_kpi_handles_infinity_and_nan_in_int_fields(tmp_path):
+    """_load_kpi gracefully handles Inf/NaN in integer-typed KPI fields (OverflowError)."""
+    kpi_path = tmp_path / "indexer_kpi.yaml"
+    kpi_path.write_text(
+        "\n".join(
+            [
+                "write_to_indexed_samples: .inf",
+                "write_to_indexed_total_ms: 100.0",
+                "repair_attempts: .nan",
+                "repair_successes: -.inf",
+                "repair_total_duration_ms: 50.0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    idx = CoreIndexer(data_dir=tmp_path)
+
+    # int fields with Inf/NaN should fall back to default (0)
+    assert idx._kpi["write_to_indexed_samples"] == 0
+    assert idx._kpi["repair_attempts"] == 0
+    assert idx._kpi["repair_successes"] == 0
+    # float fields should keep their valid values
+    assert idx._kpi["write_to_indexed_total_ms"] == 100.0
+    assert idx._kpi["repair_total_duration_ms"] == 50.0
+
+
 def test_kpi_summary_reports_sync_gap_and_repair_metrics(tmp_path, monkeypatch):
     idx = CoreIndexer(data_dir=tmp_path)
     ok_entry = idx.storage.save_convo_record(content="repair ok", requested_by_user=True)

@@ -1,8 +1,10 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from btwin.api.collab_api import create_collab_app
+from btwin.core.indexer import CoreIndexer
 
 
 def _payload(**overrides):
@@ -404,3 +406,156 @@ def test_admin_endpoints_reject_bad_tokens(tmp_path: Path):
             res = client.post(path, json=body, headers=headers)
             assert res.status_code == 403, f"{path} should reject {label}"
             assert res.json()["errorCode"] == "FORBIDDEN"
+
+
+def test_indexer_cache_returns_same_instance(tmp_path: Path):
+    """_indexer() should return the same CoreIndexer instance on repeated calls."""
+    call_count = {"n": 0}
+    original_init = CoreIndexer.__init__
+
+    def counting_init(self, *args, **kwargs):
+        call_count["n"] += 1
+        original_init(self, *args, **kwargs)
+
+    # Patch before creating the app so every CoreIndexer construction is tracked.
+    with patch.object(CoreIndexer, "__init__", counting_init):
+        app = create_collab_app(
+            data_dir=tmp_path,
+            initial_agents={"main", "codex-code", "research-bot"},
+            admin_token="secret-token",
+        )
+        client = TestClient(app)
+
+        created = client.post("/api/collab/records", json=_payload(authorAgent="research-bot")).json()
+
+        # Handoff and complete both trigger _enforce_integrity_gate -> _indexer()
+        client.post(
+            "/api/collab/handoff",
+            json={
+                "recordId": created["recordId"],
+                "expectedVersion": 1,
+                "fromAgent": "research-bot",
+                "toAgent": "codex-code",
+            },
+            headers={"X-Actor-Agent": "research-bot"},
+        )
+        client.post(
+            "/api/collab/complete",
+            json={
+                "recordId": created["recordId"],
+                "expectedVersion": 2,
+                "actorAgent": "codex-code",
+            },
+            headers={"X-Actor-Agent": "codex-code"},
+        )
+
+    # Without caching _indexer() would create a new CoreIndexer per gate call.
+    # With caching, only 1 instance should be created across both requests.
+    assert call_count["n"] == 1, (
+        f"CoreIndexer was constructed {call_count['n']} time(s) but should be cached (exactly 1)"
+    )
+
+
+def test_enforce_integrity_gate_skips_mark_pending_for_indexed_matching_checksum(
+    tmp_path: Path,
+):
+    """Integration test: _enforce_integrity_gate skips mark_pending when the doc
+    is already indexed with a matching checksum, and calls it when the checksum changes.
+
+    Steps:
+    1. Create a collab record via the API.
+    2. Index the doc via the indexer reconcile/refresh cycle.
+    3. Patch CoreIndexer.mark_pending on the cached instance to count calls.
+    4. Trigger the gate (via complete) -- mark_pending should NOT be called.
+    5. Mutate the underlying file to change its checksum, trigger gate again --
+       mark_pending SHOULD be called.
+    """
+    app = create_collab_app(
+        data_dir=tmp_path,
+        initial_agents={"main", "codex-code", "research-bot"},
+        admin_token="secret-token",
+    )
+    client = TestClient(app)
+
+    # Step 1: create a record already in "completed" status so the complete
+    # endpoint takes the idempotent path (which still runs the integrity gate).
+    created = client.post(
+        "/api/collab/records",
+        json=_payload(authorAgent="codex-code", status="completed"),
+    ).json()
+    record_id = created["recordId"]
+
+    # Step 2: reconcile + refresh so the collab file is fully indexed.
+    idx = CoreIndexer(data_dir=tmp_path)
+    idx.reconcile()
+
+    # Inject the fully-warmed indexer into the app's cache so subsequent gate
+    # calls reuse it (the app creates its own on first use; we pre-populate).
+    # Access the closure variable via the app's state.
+    # The _indexer() closure captures `_indexer_cache` from create_collab_app;
+    # we trigger one gate call to populate it, then swap mark_pending on that instance.
+    # Easiest: just call the complete endpoint once to prime the cache, then patch.
+    client.post(
+        "/api/collab/complete",
+        json={
+            "recordId": record_id,
+            "expectedVersion": 1,
+            "actorAgent": "codex-code",
+        },
+        headers={"X-Actor-Agent": "codex-code"},
+    )
+
+    # Step 3: patch mark_pending on the CoreIndexer *class* so it covers the
+    # cached instance inside the app.
+    mark_pending_calls = {"count": 0}
+    original_mark_pending = CoreIndexer.mark_pending
+
+    def tracking_mark_pending(self, **kwargs):
+        mark_pending_calls["count"] += 1
+        return original_mark_pending(self, **kwargs)
+
+    with patch.object(CoreIndexer, "mark_pending", tracking_mark_pending):
+        # Step 4: trigger the gate again via idempotent complete -- the doc is
+        # already indexed with the same checksum, so mark_pending should be skipped.
+        res = client.post(
+            "/api/collab/complete",
+            json={
+                "recordId": record_id,
+                "expectedVersion": 1,
+                "actorAgent": "codex-code",
+            },
+            headers={"X-Actor-Agent": "codex-code"},
+        )
+        assert res.status_code == 200
+        assert res.json()["idempotent"] is True
+        assert mark_pending_calls["count"] == 0, (
+            "mark_pending should be skipped when doc is indexed with matching checksum"
+        )
+
+        # Step 5: mutate the file on disk so the checksum diverges, then trigger
+        # the gate once more -- mark_pending SHOULD be called this time.
+        from btwin.core.storage import Storage
+
+        storage = Storage(tmp_path)
+        doc_info = storage.collab_index_doc_info(record_id)
+        assert doc_info is not None
+        target_file = tmp_path / doc_info["path"]
+        target_file.write_text(
+            target_file.read_text(encoding="utf-8") + "\n<!-- mutated -->",
+            encoding="utf-8",
+        )
+
+        mark_pending_calls["count"] = 0
+        res2 = client.post(
+            "/api/collab/complete",
+            json={
+                "recordId": record_id,
+                "expectedVersion": 1,
+                "actorAgent": "codex-code",
+            },
+            headers={"X-Actor-Agent": "codex-code"},
+        )
+        assert res2.status_code == 200
+        assert mark_pending_calls["count"] >= 1, (
+            "mark_pending should be called when file checksum has changed"
+        )
