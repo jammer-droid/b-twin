@@ -101,6 +101,8 @@ def btwin_search(
         scope: "project" (default) searches current project only, "all" searches everything
     """
     data: dict = {"query": query, "nResults": n_results, "scope": scope}
+    if record_type:
+        data["recordType"] = record_type
 
     if scope != "all":
         # Only inject projectId for project-scoped searches

@@ -118,6 +118,7 @@ class EntrySearchRequest(BaseModel):
     query: str
     n_results: int = Field(default=5, alias="nResults", ge=1, le=100)
     project_id: str | None = Field(default=None, alias="projectId")
+    record_type: str | None = Field(default=None, alias="recordType")
     scope: Literal["project", "all"] = "project"
 
 
@@ -1419,16 +1420,19 @@ loadDashboard();
     @app.post("/api/entries/search")
     def entry_search(body: EntrySearchRequest):
         btwin = _btwin()
+        filters = {"record_type": body.record_type} if body.record_type else None
         if body.scope == "project" and body.project_id is not None:
             results = btwin.search(
                 body.query,
                 n_results=body.n_results,
+                filters=filters,
                 project=body.project_id,
             )
         else:
             results = btwin.search(
                 body.query,
                 n_results=body.n_results,
+                filters=filters,
             )
         return {"results": results}
 
