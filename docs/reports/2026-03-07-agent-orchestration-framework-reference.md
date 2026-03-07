@@ -1,5 +1,5 @@
 ---
-doc_version: 1
+doc_version: 2
 last_updated: 2026-03-07
 status: draft
 ---
@@ -503,6 +503,203 @@ We should build:
 - dashboard visibility for workflow state
 - audit/recovery views
 - richer planner/reviewer role assignment
+
+---
+
+# Follow-up Analysis — B-TWIN Identity, Visualization, and Collaboration Model
+
+This section records the follow-up analysis conducted after reviewing the reference report and exploring both the Claw-Empire repository and B-TWIN codebase in detail.
+
+---
+
+## B-TWIN vs Claw-Empire: Fundamental Identity Difference
+
+| Axis | Claw-Empire | B-TWIN |
+|------|-------------|--------|
+| **Identity** | AI agent office simulator (visual experience) | Data-only MCP server (records, search, persistence) |
+| **Approach** | UI-first: pixel-art office, Kanban, chat panel | Data-first: markdown docs, vector search, audit logs |
+| **Stack** | TypeScript full-stack monorepo (React + Express + SQLite) | Python MCP server (FastAPI + ChromaDB + filesystem) |
+| **LLM dependency** | Server directly manages and invokes agents | No LLM in server — clients provide the brain |
+| **Organization model** | CEO → departments → team leads → agents | Lightweight — planner / implementer / reviewer suffices |
+
+### Practical interpretation
+
+Claw-Empire invests in **showing** collaboration: animated agents walking around a pixel-art office, real-time Kanban boards, chat panels, meeting rooms.
+
+B-TWIN invests in **recording** collaboration: every transition persisted as a document, every handoff searchable, every decision auditable.
+
+These are complementary philosophies, not competing ones. B-TWIN should not try to replicate Claw-Empire's visual identity. Instead, it should build visual surfaces that expose what it already does well: durable, searchable, recoverable workflow state.
+
+---
+
+## Visualization Direction — Operational Dashboard, Not Simulation
+
+### What Claw-Empire does (and we should not copy)
+
+- Pixel-art office with animated agent avatars walking between departments
+- Real-time status shown through visual metaphors (agents sitting at desks, meeting rooms)
+- 600+ skill library with visual assignment interface
+- The UI **is** the product — without it, Claw-Empire loses its identity
+
+### What B-TWIN needs instead
+
+B-TWIN's visual layer should be an **ops dashboard** — closer to Grafana or Linear than to an office simulator.
+
+The key principle: **we record everything as documents, therefore we can show everything**.
+
+#### Recommended views
+
+1. **Pipeline view** — workflow stages (implement → review → fix → done) as a horizontal pipeline with task cards flowing through
+2. **Handoff timeline** — chronological view of agent-to-agent handoffs with record summaries
+3. **Review round tracker** — per-task view showing review iterations, verdicts, fix cycles
+4. **Audit trail** — searchable log of all workflow transitions with actor/timestamp/reason
+5. **Workflow health** — blocked tasks, escalated items, stale runs, recovery candidates
+6. **History intelligence** — past similar workflows surfaced for context (unique to B-TWIN)
+
+#### Design constraint
+
+The dashboard must be **additive, not essential**. All operations must remain possible through:
+- MCP tools (for AI clients)
+- CLI (`btwin` commands)
+- HTTP API (for integrations)
+
+The dashboard visualizes what the data layer already contains. It does not introduce state that exists only in the UI.
+
+---
+
+## Agent-Agent Collaboration Model — Document-Based Handoffs
+
+### Claw-Empire's approach
+
+Claw-Empire uses an organizational simulation for agent collaboration:
+- CEO issues directives via `$` commands
+- Team leaders hold meetings and delegate subtasks
+- Agents communicate through chat channels and meeting minutes
+- Messenger integration (Telegram, Slack, Discord) for notifications
+
+This is effective for real-time, synchronous coordination. However, it is heavy and requires the orchestration runtime to be continuously available.
+
+### B-TWIN's recommended approach: Structured Handoff Records
+
+Instead of real-time chat between agents, B-TWIN should use **persisted handoff documents** as the coordination medium.
+
+#### Handoff flow
+
+```
+Agent-A (implementer)
+    │
+    ├── completes work
+    ├── writes handoff record:
+    │     - changed files
+    │     - decisions made
+    │     - unresolved issues
+    │     - review request details
+    │
+    ▼
+Runtime dispatcher
+    │
+    ├── reads handoff record
+    ├── builds continuation context:
+    │     - workflow goal
+    │     - handoff summary
+    │     - prior review findings (if any)
+    │     - relevant past workflow results (btwin_search)
+    │
+    ▼
+Agent-B (reviewer)
+    │
+    ├── receives context bundle
+    ├── performs review
+    ├── writes review record:
+    │     - verdict: pass / fail / hold
+    │     - findings
+    │     - required fixes
+    │
+    ▼  (on fail)
+Agent-A or Agent-C (fixer)
+    │
+    ├── receives review record + original handoff
+    └── performs fix, writes new handoff
+```
+
+#### Why document-based handoffs are better for B-TWIN
+
+1. **Searchable** — `btwin_search("auth module review failures")` retrieves relevant handoffs
+2. **Asynchronous** — agents do not need to run simultaneously
+3. **Recoverable** — runtime crash does not lose coordination state; files persist
+4. **Auditable** — complete chain of who handed off what, when, and why
+5. **Learnable** — past handoff patterns inform future continuation context
+
+#### Existing foundation
+
+B-TWIN already has relevant building blocks:
+- `collab_models.py`: `draft → handed_off → completed` status model
+- `gate.py`: idempotent state transitions with CAS versioning
+- `audit.py`: JSONL append-only audit trail
+- `storage.py`: markdown + YAML frontmatter persistence
+
+The handoff model extends these existing patterns rather than introducing a new paradigm.
+
+---
+
+## Unique Capability: Workflow Intelligence from History
+
+This is a capability that Claw-Empire does not have and B-TWIN is uniquely positioned to build.
+
+Because B-TWIN persists all workflow state as searchable documents with semantic indexing:
+
+1. **Pattern detection** — when building continuation context for a new task, search for similar past tasks and surface their review/fix history
+2. **Failure pattern analysis** — identify recurring review failure patterns across workflows
+3. **Context enrichment** — the continuation context builder can inject lessons from past workflows, not just the current workflow's state
+4. **Estimation signals** — historical review round counts for similar tasks provide rough difficulty signals
+
+### Difference from Claw-Empire
+
+| Aspect | Claw-Empire | B-TWIN |
+|--------|-------------|--------|
+| Context for next step | Current workflow state only | Current state + semantically similar past workflows |
+| Learning from history | Manual (meeting minutes, reports) | Automatic (vector search over indexed records) |
+| Recovery intelligence | Resume from DB row | Resume from persisted docs + search for related recovery patterns |
+
+This is the clearest differentiator: **Claw-Empire dispatches the next step. B-TWIN dispatches the next step with historical awareness.**
+
+---
+
+## Recommended Role Model — Minimal and Practical
+
+Claw-Empire uses a rich organizational hierarchy: CEO → departments (6) → team leads → agents, with meetings, skills assignment, and departmental routing.
+
+B-TWIN should use a **3-role model**:
+
+```
+Planner  →  Implementer  →  Reviewer
+   ↑                            │
+   └──── on fix request ────────┘
+```
+
+- **Planner**: decomposes goals into ordered tasks with specs and dependencies
+- **Implementer**: executes task specs, produces artifacts, writes handoff records
+- **Reviewer**: evaluates artifacts against specs, writes review records with verdict
+
+No departments, no team leads, no meeting system. Roles are phases of work, not permanent organizational positions. The same agent can play different roles in different tasks.
+
+This is sufficient for MVP and avoids the organizational overhead that makes Claw-Empire's runtime complex.
+
+---
+
+## Summary of Follow-up Conclusions
+
+1. **B-TWIN's identity is "the quiet backbone"** — it records, searches, and recovers, while Claw-Empire shows and simulates
+2. **Visual surfaces should be operational, not decorative** — pipeline views, handoff timelines, audit trails, not pixel art
+3. **Agent collaboration should be document-based** — structured handoff records, not real-time chat channels
+4. **Workflow intelligence from history is the key differentiator** — no other reference project does this
+5. **Keep the role model minimal** — 3 roles, no organizational simulation
+6. **Dashboard is additive** — headless-first, UI-second; all operations work without the dashboard
+
+### Related design documents
+
+- `docs/plans/2026-03-07-orchestration-engine-design.md` — detailed orchestration engine architecture
+- `docs/plans/2026-03-07-dashboard-visualization-spec.md` — dashboard view specifications
 
 ---
 
