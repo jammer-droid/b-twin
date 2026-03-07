@@ -6,3 +6,4 @@ dist/
 .chroma/
 .pytest_cache/
 .worktrees/
+.DS_Store
