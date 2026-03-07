@@ -1,3 +1,11 @@
+---
+doc_version: 1
+last_updated: 2026-03-07
+status: proposed
+supersedes:
+  - docs/plans/2026-03-06-workflow-orchestration-mvp.md
+---
+
 # Orchestration Engine Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
@@ -17,22 +25,28 @@
 - Reference: `docs/reports/2026-03-07-orchestration-design-feedback-response.md`
 - Reference: `docs/reports/2026-03-07-orchestration-design-followup-response.md`
 
-**Step 1: Update the design doc header and scope text**
+**Step 1: Update the design doc header and plan relationship**
 Add/confirm:
 - 5-layer architecture
 - source-of-truth rules
 - phase/status separation
 - trigger priority
 - MVP sequential-scope statement
+- this plan supersedes `docs/plans/2026-03-06-workflow-orchestration-mvp.md`
 
-**Step 2: Add review normalization and lifecycle rules**
+**Step 2: Add workflow engine vs gate ownership notes**
+Document the intended separation explicitly:
+- `workflow_gate.py` = pure transition functions and guards only
+- `workflow_engine.py` = state rebuild, inconsistency detection, and coordination around gate outputs
+
+**Step 3: Add review normalization and lifecycle rules**
 Document:
 - `CanonicalReviewResult`
 - `ReviewFinding`
 - TaskRun open → closed → immutable lifecycle
 - `awaiting_input` / `blocked` / `interrupted` / `escalated` boundaries
 
-**Step 3: Add transition examples section**
+**Step 4: Add transition examples section**
 Include at least:
 - implement success → review queued
 - review fail → fix queued
@@ -40,13 +54,13 @@ Include at least:
 - watchdog recovery
 - escalation after retry threshold
 
-**Step 4: Sanity-read the design doc for contradiction removal**
+**Step 5: Sanity-read the design doc for contradiction removal**
 Check for conflicts between:
 - append-only event language
 - mutable TaskRun lifecycle language
 - handoff-driven coordination vs completion-event-driven transitions
 
-**Step 5: Commit**
+**Step 6: Commit**
 ```bash
 git add docs/plans/2026-03-07-orchestration-engine-design.md
 git commit -m "docs(design): consolidate orchestration engine runtime rules"
@@ -151,7 +165,49 @@ git commit -m "feat(storage): persist workflow runs reviews and handoffs"
 
 ---
 
-### Task 4: Source-of-truth and recomputation helpers
+### Task 4: Indexer compatibility for workflow records
+
+**Files:**
+- Modify: `src/btwin/core/indexer.py`
+- Modify: `src/btwin/core/storage.py`
+- Test: `tests/test_core/test_workflow_indexing.py`
+- Docs: `docs/reports/2026-03-07-workflow-indexer-compat.md`
+
+**Step 1: Write failing indexing tests**
+Cover:
+- workflow records appear in `list_indexable_documents()`
+- `record_type="workflow"` is stable and filterable
+- checksum/doc_version updates propagate when run/task docs change
+- reconcile/refresh does not skip workflow namespaces
+
+Run:
+```bash
+uv run pytest -q tests/test_core/test_workflow_indexing.py
+```
+Expected: FAIL because workflow indexing support is incomplete.
+
+**Step 2: Implement minimal indexer compatibility**
+Ensure workflow/task/run/review/handoff documents are indexable through the existing indexer path.
+
+**Step 3: Write compatibility report**
+Document what changed and what remains future work.
+
+**Step 4: Re-run tests**
+Run:
+```bash
+uv run pytest -q tests/test_core/test_workflow_indexing.py
+```
+Expected: PASS
+
+**Step 5: Commit**
+```bash
+git add src/btwin/core/indexer.py src/btwin/core/storage.py tests/test_core/test_workflow_indexing.py docs/reports/2026-03-07-workflow-indexer-compat.md
+git commit -m "feat(indexer): make orchestration workflow docs searchable"
+```
+
+---
+
+### Task 5: Source-of-truth and recomputation helpers
 
 **Files:**
 - Create: `src/btwin/core/workflow_engine.py`
@@ -191,13 +247,14 @@ git commit -m "feat(workflow): add source-of-truth rebuild helpers"
 
 ---
 
-### Task 5: Transition gate and next-step computation
+### Task 6: Transition gate and next-step computation
 
 **Files:**
-- Modify: `src/btwin/core/workflow_gate.py`
+- Create: `src/btwin/core/workflow_gate.py`
 - Modify: `src/btwin/core/workflow_engine.py`
 - Test: `tests/test_core/test_workflow_gate.py`
 - Test: `tests/test_core/test_workflow_transitions.py`
+- Reference: `src/btwin/core/gate.py`
 
 **Step 1: Write failing transition tests**
 Cover:
@@ -236,7 +293,7 @@ git commit -m "feat(workflow): add deterministic transition engine"
 
 ---
 
-### Task 6: Review normalization layer
+### Task 7: Review normalization layer
 
 **Files:**
 - Modify: `src/btwin/core/workflow_engine.py`
@@ -277,7 +334,7 @@ git commit -m "feat(workflow): add canonical review normalization"
 
 ---
 
-### Task 7: Idempotent dispatch and transition keys
+### Task 8: Idempotent dispatch and transition keys
 
 **Files:**
 - Create: `src/btwin/core/workflow_dispatcher.py`
@@ -318,12 +375,55 @@ git commit -m "feat(workflow): add idempotent next-step dispatcher"
 
 ---
 
-### Task 8: Completion handler built on runtime-observable facts
+### Task 9: Workflow CRUD API scaffold
+
+**Files:**
+- Modify: `src/btwin/api/collab_api.py`
+- Create: `src/btwin/api/workflow_api.py` (if route extraction is cleaner)
+- Test: `tests/test_api/test_workflow_api.py`
+
+**Step 1: Write failing CRUD API tests**
+Cover:
+- `POST /api/workflows/epics`
+- `GET /api/workflows/epics`
+- `POST /api/workflows/tasks`
+- `GET /api/workflows/tasks`
+- `GET /api/workflows/runs`
+
+Run:
+```bash
+uv run pytest -q tests/test_api/test_workflow_api.py
+```
+Expected: FAIL because CRUD routes do not exist.
+
+**Step 2: Implement minimal CRUD routes**
+Expose workflow creation/list/read operations backed by persisted records.
+
+**Step 3: Decide route-file placement explicitly**
+If `collab_api.py` is becoming too large, split workflow routes into `src/btwin/api/workflow_api.py` and mount from the main API module.
+
+**Step 4: Re-run tests**
+Run:
+```bash
+uv run pytest -q tests/test_api/test_workflow_api.py
+```
+Expected: PASS
+
+**Step 5: Commit**
+```bash
+git add src/btwin/api/collab_api.py src/btwin/api/workflow_api.py tests/test_api/test_workflow_api.py
+git commit -m "feat(api): add workflow CRUD scaffold"
+```
+
+---
+
+### Task 10: Completion handler built on runtime-observable facts
 
 **Files:**
 - Modify: `src/btwin/api/collab_api.py`
 - Modify: `src/btwin/core/workflow_dispatcher.py`
 - Test: `tests/test_api/test_workflow_completion_api.py`
+- Test: `tests/test_core/test_workflow_audit.py`
 
 **Step 1: Write failing completion API tests**
 Cover:
@@ -331,10 +431,11 @@ Cover:
 - completion without structured output but with diff/log refs
 - completion with empty output leading to `awaiting_input`
 - review completion producing canonical review record
+- audit entry written for completion + transition
 
 Run:
 ```bash
-uv run pytest -q tests/test_api/test_workflow_completion_api.py
+uv run pytest -q tests/test_api/test_workflow_completion_api.py tests/test_core/test_workflow_audit.py
 ```
 Expected: FAIL because the completion route/handler is incomplete.
 
@@ -345,23 +446,24 @@ Ensure it:
 - computes next transition
 - persists materialized state updates
 - dispatches next run if needed
+- appends audit entries
 
 **Step 3: Re-run tests**
 Run:
 ```bash
-uv run pytest -q tests/test_api/test_workflow_completion_api.py
+uv run pytest -q tests/test_api/test_workflow_completion_api.py tests/test_core/test_workflow_audit.py
 ```
 Expected: PASS
 
 **Step 4: Commit**
 ```bash
-git add src/btwin/api/collab_api.py src/btwin/core/workflow_dispatcher.py tests/test_api/test_workflow_completion_api.py
+git add src/btwin/api/collab_api.py src/btwin/core/workflow_dispatcher.py tests/test_api/test_workflow_completion_api.py tests/test_core/test_workflow_audit.py
 git commit -m "feat(api): add workflow completion and handoff handling"
 ```
 
 ---
 
-### Task 9: Continuation context builder and prompt bundles
+### Task 11: Continuation context builder and prompt bundles
 
 **Files:**
 - Create: `src/btwin/core/workflow_context.py`
@@ -404,13 +506,14 @@ git commit -m "feat(workflow): add continuation context builder"
 
 ---
 
-### Task 10: Recovery APIs and watchdog
+### Task 12: Recovery APIs and watchdog
 
 **Files:**
 - Create: `src/btwin/core/workflow_watchdog.py`
 - Modify: `src/btwin/api/collab_api.py`
 - Test: `tests/test_core/test_workflow_watchdog.py`
 - Test: `tests/test_api/test_workflow_recovery_api.py`
+- Test: `tests/test_core/test_workflow_audit.py`
 
 **Step 1: Write failing recovery tests**
 Cover:
@@ -419,10 +522,11 @@ Cover:
 - watchdog recovery requeues same phase
 - resume API ignores already-running run
 - watchdog does not preempt active healthy run
+- audit entry written for recovery actions
 
 Run:
 ```bash
-uv run pytest -q tests/test_core/test_workflow_watchdog.py tests/test_api/test_workflow_recovery_api.py
+uv run pytest -q tests/test_core/test_workflow_watchdog.py tests/test_api/test_workflow_recovery_api.py tests/test_core/test_workflow_audit.py
 ```
 Expected: FAIL because watchdog/recovery is incomplete.
 
@@ -432,23 +536,24 @@ Add:
 - orphaned transition scan
 - recovery dispatch path using same idempotent dispatcher
 - resume endpoint using same logic
+- audit writes for recovery decisions
 
 **Step 3: Re-run tests**
 Run:
 ```bash
-uv run pytest -q tests/test_core/test_workflow_watchdog.py tests/test_api/test_workflow_recovery_api.py
+uv run pytest -q tests/test_core/test_workflow_watchdog.py tests/test_api/test_workflow_recovery_api.py tests/test_core/test_workflow_audit.py
 ```
 Expected: PASS
 
 **Step 4: Commit**
 ```bash
-git add src/btwin/core/workflow_watchdog.py src/btwin/api/collab_api.py tests/test_core/test_workflow_watchdog.py tests/test_api/test_workflow_recovery_api.py
+git add src/btwin/core/workflow_watchdog.py src/btwin/api/collab_api.py tests/test_core/test_workflow_watchdog.py tests/test_api/test_workflow_recovery_api.py tests/test_core/test_workflow_audit.py
 git commit -m "feat(workflow): add recovery watchdog and resume hooks"
 ```
 
 ---
 
-### Task 11: MCP/headless workflow tool surface
+### Task 13: MCP/headless workflow tool surface
 
 **Files:**
 - Modify: `src/btwin/mcp/proxy.py`
@@ -490,7 +595,7 @@ git commit -m "feat(mcp): add orchestration workflow tools"
 
 ---
 
-### Task 12: Docs, verification, and handoff
+### Task 14: Docs, verification, and handoff
 
 **Files:**
 - Modify: `README.md`
@@ -501,29 +606,37 @@ git commit -m "feat(mcp): add orchestration workflow tools"
 Document:
 - workflow lifecycle
 - handoff model
-- completion/resume/watchdog behavior
+- CRUD + completion/resume/watchdog behavior
 - terminal states vs checkpoints
 - MVP sequential-scope constraint
+- relationship to superseded workflow MVP plan
 
 **Step 2: Add verification guide**
 Include manual checks for:
+- workflow creation and listing
 - implement → review progression
 - review fail → fix → review
 - duplicate completion tolerance
 - watchdog stale-run recovery
 - escalation path
+- indexer discoverability of workflow docs
 
 **Step 3: Run targeted verification**
 Run:
 ```bash
 uv run pytest -q tests/test_core/test_workflow_models.py \
   tests/test_core/test_workflow_storage.py \
+  tests/test_core/test_workflow_handoffs.py \
+  tests/test_core/test_workflow_indexing.py \
   tests/test_core/test_workflow_engine_state.py \
   tests/test_core/test_workflow_gate.py \
   tests/test_core/test_review_normalization.py \
   tests/test_core/test_workflow_dispatcher.py \
+  tests/test_core/test_workflow_idempotency.py \
   tests/test_core/test_workflow_context.py \
   tests/test_core/test_workflow_watchdog.py \
+  tests/test_core/test_workflow_audit.py \
+  tests/test_api/test_workflow_api.py \
   tests/test_api/test_workflow_completion_api.py \
   tests/test_api/test_workflow_recovery_api.py \
   tests/test_mcp/test_workflow_tools.py
