@@ -150,7 +150,7 @@ Detailed runbook: `docs/indexer-operations.md`
 
 This repo now includes the shared foundation that future workflow orchestration and dashboard work can build on:
 
-- deterministic shared-record storage under `entries/shared/<namespace>/<YYYY-MM-DD>/<record_id>.md`
+- deterministic shared-record storage under `entries/_global/shared/<namespace>/<YYYY-MM-DD>/<record_id>.md` (or `entries/<project>/shared/...` for project-scoped records)
 - indexer compatibility for shared workflow documents
 - foundation API route groups:
   - `GET /api/workflows/health`
