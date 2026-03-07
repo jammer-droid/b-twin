@@ -35,23 +35,25 @@ cd b-twin
 `install.sh` handles everything:
 
 1. Checks for [uv](https://docs.astral.sh/uv/) and installs it if missing
-2. Installs Python dependencies (`uv sync`)
-3. Creates `~/.btwin/` global data directory
+2. Installs `btwin` as a global CLI tool (`uv tool install .`)
+3. Creates `~/.btwin/` data directory
 4. Generates `~/.btwin/serve.sh` and `~/.btwin/proxy.sh` wrapper scripts
 
-## Project Setup
+After installation, `btwin` is available globally — no `uv run` prefix needed.
 
-**Claude Code / Codex CLI:**
+## Quick Start
 
 ```bash
+# 1. Start the API server (keep running in a terminal)
+btwin serve-api
+
+# 2. In your project directory, set up MCP connection
 cd my-project
-./install.sh              # One-time: install B-TWIN
-btwin serve-api            # Start the API server (keep running)
-btwin init                 # Auto-detect project name from git, create .mcp.json
+btwin init                 # Auto-detect project name from git
 # or: btwin init my-project
 ```
 
-`btwin init` generates `.mcp.json` that routes MCP traffic through the proxy with the correct project binding.
+`btwin init` generates `.mcp.json` that routes MCP traffic through the proxy with the correct project binding. Claude Code auto-detects this file.
 
 **OpenClaw bots:**
 
@@ -60,6 +62,13 @@ mcp_servers:
   btwin:
     command: ~/.btwin/proxy.sh
     args: [--project, main]
+```
+
+## Uninstall
+
+```bash
+uv tool uninstall btwin    # Remove the CLI tool
+rm -rf ~/.btwin             # Remove data and config
 ```
 
 ## MCP Tools
@@ -153,7 +162,7 @@ This repo now includes the shared foundation that future workflow orchestration 
 To run the HTTP API locally:
 
 ```bash
-uv run btwin serve-api
+btwin serve-api
 ```
 
 Verification / handoff guide:

@@ -70,11 +70,11 @@ def test_persisted_shared_record_state_is_sufficient_to_compute_resume_pointer(t
         ),
     )
 
-    assert first_path == second_path == tmp_path / "entries" / "shared" / "workflow" / "2026-03-06" / "task-run-001.md"
+    assert first_path == second_path == tmp_path / "entries" / "_global" / "shared" / "workflow" / "2026-03-06" / "task-run-001.md"
     assert [
         path.relative_to(tmp_path).as_posix()
-        for path in sorted(tmp_path.glob("entries/shared/workflow/*/task-run-001.md"))
-    ] == ["entries/shared/workflow/2026-03-06/task-run-001.md"]
+        for path in sorted(tmp_path.glob("entries/_global/shared/workflow/*/task-run-001.md"))
+    ] == ["entries/_global/shared/workflow/2026-03-06/task-run-001.md"]
 
     frontmatter = _read_frontmatter(second_path)
     assert frontmatter["recordId"] == "task-run-001"
@@ -85,7 +85,7 @@ def test_persisted_shared_record_state_is_sufficient_to_compute_resume_pointer(t
 
     assert resume_pointer == {
         "record_id": "task-run-001",
-        "doc_id": "entries/shared/workflow/2026-03-06/task-run-001.md",
+        "doc_id": "entries/_global/shared/workflow/2026-03-06/task-run-001.md",
         "record_type": "workflow",
         "doc_version": 2,
         "status": "running",
